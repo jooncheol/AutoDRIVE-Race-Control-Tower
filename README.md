@@ -120,3 +120,7 @@ RCT handles both common AutoDRIVE id forms:
 Binary frames are forwarded without id rewriting. Use text or JSON frames when id rewriting is required.
 
 The referenced AutoDRIVE RoboRacer DevKit bridge currently uses Socket.IO in its public example. This project uses native WebSocket via the `websockets` package as requested. If a DevKit instance exposes only Socket.IO, place a Socket.IO-to-native-WebSocket adapter in front of it or update the DevKit bridge transport while preserving the AutoDRIVE payload schema.
+
+## License
+
+This project is licensed under the BSD 3-Clause License. See `LICENSE`.

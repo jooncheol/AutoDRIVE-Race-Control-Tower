@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BSD-3-Clause
 set -euo pipefail
 
 IMAGE_NAME="${IMAGE_NAME:-autodrive-rct:dev}"

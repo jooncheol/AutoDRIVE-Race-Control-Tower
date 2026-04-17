@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
 import json
 import unittest
 
@@ -86,4 +88,3 @@ class ProtocolRewriteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

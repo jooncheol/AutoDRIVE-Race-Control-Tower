@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,4 +19,3 @@ COPY README.md AGENTS.md ./
 EXPOSE 8765
 
 CMD ["python", "-m", "rct"]
-
