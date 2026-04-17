@@ -2,6 +2,25 @@
 
 AutoDRIVE Race Control Tower (RCT) is a high-performance WebSocket proxy for the AutoDRIVE RoboRacer H2H Simulator. It lets one simulator interact with two independent DevKit bridge instances without changing the existing AutoDRIVE protocol or the DevKit bridge code.
 
+```mermaid
+flowchart LR
+    sim["AutoDRIVE H2H Simulator<br/>(WS client)<br/>/simulator"]
+    rct["AutoDRIVE RCT<br/>(WS server + Vehicle id rewriting proxy)"]
+    ui["RCT Web Frontend<br/>(WS client)<br/>/frontend"]
+    dk1["DevKit Instance 1<br/>assigned simulator id: 1<br/>expects roboracer_1 / V1"]
+    dk2["DevKit Instance 2<br/>assigned simulator id: 2<br/>expects roboracer_1 / V1"]
+
+    sim <-->|"AutoDRIVE Bridge Protocol downstream"| rct
+    ui <-->|"connection status, monitoring only"| rct
+    rct <-->|"AutoDRIVE Bridge Protocol upstream"| dk1
+    rct <-->|"AutoDRIVE Bridge Protocol upstream"| dk2
+
+    rct -->|"id 1 data stays id 1"| dk1
+    dk1 -->|"id 1 commands stay id 1"| rct
+    rct -->|"sim id 2 data -> id 1"| dk2
+    dk2 -->|"id 1 commands -> sim id 2"| rct
+```
+
 ## Purpose
 
 The stock DevKit bridge expects to control `roboracer_1`. In a head-to-head simulator run, each DevKit instance still receives vehicle data as `roboracer_1`, while RCT maps each connected DevKit instance to a simulator vehicle id:
@@ -16,6 +35,18 @@ Example mapping:
 - AutoDRIVE bridge dictionary fields such as `V2 Position` are sent to DevKit 2 as `V1 Position`.
 - DevKit 2 fields such as `V1 Throttle` are sent back to the simulator as `V2 Throttle`.
 
+```mermaid
+sequenceDiagram
+    participant Simulator
+    participant RCT
+    participant DevKit2 as DevKit Instance 2
+
+    Simulator->>RCT: /autodrive/roboracer_2/ips or V2 Position
+    RCT->>DevKit2: /autodrive/roboracer_1/ips or V1 Position
+    DevKit2->>RCT: /autodrive/roboracer_1/throttle_command or V1 Throttle
+    RCT->>Simulator: /autodrive/roboracer_2/throttle_command or V2 Throttle
+```
+
 ## Connection Model
 
 - RCT WebSocket server: `0.0.0.0:8765`
@@ -25,6 +56,7 @@ Example mapping:
 - DevKit upstream 2: configured by `RCT_DEVKIT_URLS`
 
 By default, DevKit 1 is assigned simulator vehicle id `1` and DevKit 2 is assigned simulator vehicle id `2`.
+
 
 ## Requirements
 
