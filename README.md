@@ -125,7 +125,7 @@ docker run --rm \
 
 On Linux, add `--add-host=host.docker.internal:host-gateway` if `host.docker.internal` is not available, or place RCT and the DevKit instances on the same Docker network.
 
-The bundled `./run.sh` script builds `autodrive-rct:dev` from the current workspace before running it. It uses Docker host networking and defaults DevKit URLs to `ws://127.0.0.1:4568,ws://127.0.0.1:4569`.
+The bundled `./run.sh` script builds `autodrive-rct:dev` from the current workspace before running it. It uses Docker host networking, bind mounts the host `frontend` directory into `/app/frontend`, and defaults DevKit URLs to `ws://127.0.0.1:4568,ws://127.0.0.1:4569`.
 
 ## Frontend Command Format
 

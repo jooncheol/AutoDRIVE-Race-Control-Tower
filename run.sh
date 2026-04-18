@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="${IMAGE_NAME:-autodrive-rct:dev}"
 RCT_BUILD_IMAGE="${RCT_BUILD_IMAGE:-1}"
 RCT_PORT="${RCT_PORT:-4567}"
@@ -20,7 +21,11 @@ if [[ "${RCT_BUILD_IMAGE}" == "1" ]]; then
   docker build -t "${IMAGE_NAME}" .
 fi
 
-docker_flags=(--rm --network host)
+docker_flags=(
+  --rm
+  --network host
+  --volume "${SCRIPT_DIR}/frontend:/app/frontend:ro"
+)
 if [[ -t 0 && -t 1 ]]; then
   docker_flags+=(-it)
 fi
