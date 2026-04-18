@@ -13,7 +13,17 @@
     >
   </head>
   <body class="bg-body-tertiary">
-    <main class="container py-5">
+    <nav class="navbar navbar-expand navbar-dark bg-dark">
+      <div class="container">
+        <a class="navbar-brand" href="#">AutoDRIVE RCT</a>
+        <div class="navbar-nav">
+          <a class="nav-link active" aria-current="page" href="#">Dashboard</a>
+          <a class="nav-link" href="#connection">Connection</a>
+        </div>
+      </div>
+    </nav>
+
+    <main id="connection" class="container py-5">
       <h1 class="h3 mb-3">AutoDRIVE Race Control Tower</h1>
       <p class="text-secondary mb-4">
         Check the browser console for the RCT WebSocket connection state.
@@ -21,7 +31,7 @@
       <div class="row g-3">
         <div class="col-12 col-lg-6">
           <label for="serverUrl" class="form-label">WebSocket URL</label>
-          <input id="serverUrl" class="form-control" value="ws://localhost:4567/frontend">
+          <input id="serverUrl" class="form-control">
         </div>
         <div class="col-12 col-lg-6 d-flex align-items-end">
           <button id="connectButton" class="btn btn-primary me-2" type="button">Connect</button>
@@ -32,9 +42,16 @@
 
     <script>
       let socket = null;
+      const serverUrlInput = document.getElementById("serverUrl");
+
+      function defaultServerUrl() {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = window.location.host || "localhost:4567";
+        return `${protocol}//${host}/frontend`;
+      }
 
       function connect() {
-        const serverUrl = document.getElementById("serverUrl").value;
+        const serverUrl = serverUrlInput.value;
         if (socket && socket.readyState === WebSocket.OPEN) {
           console.log("RCT WebSocket already connected:", serverUrl);
           return;
@@ -59,6 +76,7 @@
         }
       }
 
+      serverUrlInput.value = defaultServerUrl();
       document.getElementById("connectButton").addEventListener("click", connect);
       document.getElementById("disconnectButton").addEventListener("click", disconnect);
       connect();

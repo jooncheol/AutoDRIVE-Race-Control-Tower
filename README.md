@@ -52,6 +52,7 @@ sequenceDiagram
 ## Connection Model
 
 - RCT WebSocket server: `0.0.0.0:4567`
+- RCT HTTP frontend: `http://<rct-host>:4567/`
 - AutoDRIVE Simulator client: `ws://<rct-host>:4567/simulator`
 - RCT browser frontend client: `ws://<rct-host>:4567/frontend`
 - DevKit upstream 1: configured by `RCT_DEVKIT_URLS`
@@ -102,7 +103,7 @@ Environment variables:
 
 ## Frontend
 
-Open `frontend/index.html` in a browser. The page uses Bootstrap and logs only the RCT WebSocket connection state to the browser console.
+Run RCT, then open `http://localhost:4567/` in a browser. RCT serves `frontend/index.html` and static assets from the bundled `frontend` directory. The page uses Bootstrap and logs only the RCT WebSocket connection state to the browser console.
 
 ## Docker
 
@@ -123,6 +124,8 @@ docker run --rm \
 ```
 
 On Linux, add `--add-host=host.docker.internal:host-gateway` if `host.docker.internal` is not available, or place RCT and the DevKit instances on the same Docker network.
+
+The bundled `./run.sh` script builds `autodrive-rct:dev` from the current workspace before running it. It uses Docker host networking and defaults DevKit URLs to `ws://127.0.0.1:4568,ws://127.0.0.1:4569`.
 
 ## Frontend Command Format
 

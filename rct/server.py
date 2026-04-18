@@ -8,17 +8,22 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import ServerConnection, serve
+from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request, Response
 
 from .config import Settings, load_settings
 from .protocol import rewrite_devkit_to_simulator, rewrite_simulator_to_devkit
+from .static_files import build_static_file_response
 
 LOGGER = logging.getLogger("rct")
+FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 
 
 def utc_now() -> str:
@@ -153,12 +158,13 @@ class RaceControlTower:
                 self.handle_client,
                 self.settings.host,
                 self.settings.port,
+                process_request=self.process_request,
                 max_size=self.settings.max_message_size,
                 ping_interval=self.settings.ping_interval_seconds,
                 ping_timeout=self.settings.ping_timeout_seconds,
             ) as server:
                 sockets = ", ".join(str(socket.getsockname()) for socket in server.sockets or [])
-                LOGGER.info("RCT WebSocket server listening on %s", sockets)
+                LOGGER.info("RCT server listening on %s", sockets)
                 await asyncio.Future()
         finally:
             for task in devkit_tasks:
@@ -179,6 +185,21 @@ class RaceControlTower:
                 )
             )
             await connection.close(code=1008, reason="unknown RCT client role")
+
+    def process_request(self, connection: ServerConnection, request: Request) -> Response | None:
+        if request.headers.get("Upgrade", "").lower() == "websocket":
+            return None
+
+        static_response = build_static_file_response(request.path, FRONTEND_ROOT)
+        headers = Headers()
+        for name, value in static_response.headers:
+            headers[name] = value
+        return Response(
+            static_response.status_code,
+            static_response.reason_phrase,
+            headers,
+            static_response.body,
+        )
 
     def _role_from_connection(self, connection: ServerConnection) -> str | None:
         request_path = connection.request.path if connection.request else "/"
