@@ -6,7 +6,7 @@ AutoDRIVE Race Control Tower (RCT) is a high-performance WebSocket proxy for the
 
 ```mermaid
 flowchart LR
-    sim["AutoDRIVE H2H Simulator<br/>(WS client)<br/>/simulator"]
+    sim["AutoDRIVE H2H Simulator<br/>(WS client)<br/>/"]
     rct["AutoDRIVE RCT<br/>(WS server + Vehicle id rewriting proxy)"]
     ui["RCT Web Frontend<br/>(WS client)<br/>/frontend"]
     dk1["DevKit Instance 1<br/>assigned simulator id: 1<br/>expects roboracer_1 / V1"]
@@ -51,10 +51,9 @@ sequenceDiagram
 
 ## Connection Model
 
-- RCT WebSocket server: `0.0.0.0:4567`
 - RCT HTTP frontend: `http://<rct-host>:4567/`
-- AutoDRIVE Simulator client: `ws://<rct-host>:4567/simulator`
-- RCT browser frontend client: `ws://<rct-host>:4567/frontend`
+- AutoDRIVE Simulator client: `ws://<rct-host>:4567/` (Working as Devkit Proxy)
+- RCT browser frontend client: `ws://<rct-host>:4567/frontend` (Communication between Frontend and RCT)
 - DevKit upstream 1: configured by `RCT_DEVKIT_URLS`
 - DevKit upstream 2: configured by `RCT_DEVKIT_URLS`
 

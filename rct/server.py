@@ -181,7 +181,7 @@ class RaceControlTower:
             await connection.send(
                 envelope(
                     "error",
-                    message="Use /simulator, /frontend, or ?role=simulator|frontend.",
+                    message="Use / for simulator, /frontend for frontend, or ?role=simulator|frontend.",
                 )
             )
             await connection.close(code=1008, reason="unknown RCT client role")
@@ -209,7 +209,7 @@ class RaceControlTower:
             return role_from_query
 
         normalized_path = parsed.path.rstrip("/") or "/"
-        if normalized_path == "/simulator":
+        if normalized_path == "/":
             return "simulator"
         if normalized_path in {"/frontend", "/ws"}:
             return "frontend"
