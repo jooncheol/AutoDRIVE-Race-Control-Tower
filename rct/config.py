@@ -44,7 +44,7 @@ def load_settings() -> Settings:
         url.strip()
         for url in os.getenv(
             "RCT_DEVKIT_URLS",
-            "ws://127.0.0.1:4567,ws://127.0.0.1:4568",
+            "ws://127.0.0.1:4568,ws://127.0.0.1:4569",
         ).split(",")
         if url.strip()
     )
@@ -63,7 +63,7 @@ def load_settings() -> Settings:
 
     return Settings(
         host=os.getenv("RCT_HOST", "0.0.0.0"),
-        port=_get_int("RCT_PORT", 8765),
+        port=_get_int("RCT_PORT", 4567),
         devkit_urls=devkit_urls,
         devkit_vehicle_ids=devkit_vehicle_ids,
         reconnect_delay_seconds=_get_float("RCT_RECONNECT_DELAY_SECONDS", 3.0),

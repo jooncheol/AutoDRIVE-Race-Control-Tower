@@ -21,7 +21,7 @@ This repository contains AutoDRIVE Race Control Tower (RCT), a native WebSocket 
 ## Run And Verify
 
 - Local run: `python -m rct`
-- Docker run: `docker run --rm -p 8765:8765 autodrive-rct`
+- Docker run: `docker run --rm -p 4567:4567 autodrive-rct`
 - Frontend check: open `frontend/index.html` and inspect browser console connection logs.
 - Protocol unit tests: `python3 -m unittest`
 
@@ -31,4 +31,3 @@ This repository contains AutoDRIVE Race Control Tower (RCT), a native WebSocket 
 - Binary frames are forwarded without id rewriting.
 - Camera and LIDAR frames can be large; tune `RCT_MAX_MESSAGE_SIZE` for the deployment.
 - Do not revert user changes. Leave unrelated cleanup for a separate request.
-

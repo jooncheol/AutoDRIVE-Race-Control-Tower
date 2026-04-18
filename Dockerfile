@@ -5,7 +5,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     RCT_HOST=0.0.0.0 \
-    RCT_PORT=8765
+    RCT_PORT=4567
 
 WORKDIR /app
 
@@ -16,6 +16,6 @@ COPY rct ./rct
 COPY frontend ./frontend
 COPY README.md AGENTS.md ./
 
-EXPOSE 8765
+EXPOSE 4567
 
 CMD ["python", "-m", "rct"]

@@ -51,9 +51,9 @@ sequenceDiagram
 
 ## Connection Model
 
-- RCT WebSocket server: `0.0.0.0:8765`
-- AutoDRIVE Simulator client: `ws://<rct-host>:8765/simulator`
-- RCT browser frontend client: `ws://<rct-host>:8765/frontend`
+- RCT WebSocket server: `0.0.0.0:4567`
+- AutoDRIVE Simulator client: `ws://<rct-host>:4567/simulator`
+- RCT browser frontend client: `ws://<rct-host>:4567/frontend`
 - DevKit upstream 1: configured by `RCT_DEVKIT_URLS`
 - DevKit upstream 2: configured by `RCT_DEVKIT_URLS`
 
@@ -81,7 +81,7 @@ websockets==16.0
 ## Run Locally
 
 ```bash
-export RCT_DEVKIT_URLS="ws://127.0.0.1:4567,ws://127.0.0.1:4568"
+export RCT_DEVKIT_URLS="ws://127.0.0.1:4568,ws://127.0.0.1:4569"
 export RCT_DEVKIT_VEHICLE_IDS="1,2"
 python3 -m rct
 ```
@@ -91,8 +91,8 @@ Environment variables:
 | Name | Default | Description |
 | --- | --- | --- |
 | `RCT_HOST` | `0.0.0.0` | RCT WebSocket bind host |
-| `RCT_PORT` | `8765` | RCT WebSocket port |
-| `RCT_DEVKIT_URLS` | `ws://127.0.0.1:4567,ws://127.0.0.1:4568` | Comma-separated DevKit WebSocket URLs |
+| `RCT_PORT` | `4567` | RCT WebSocket port |
+| `RCT_DEVKIT_URLS` | `ws://127.0.0.1:4568,ws://127.0.0.1:4569` | Comma-separated DevKit WebSocket URLs |
 | `RCT_DEVKIT_VEHICLE_IDS` | `1,2,...` | Comma-separated simulator vehicle ids assigned to each DevKit URL |
 | `RCT_RECONNECT_DELAY_SECONDS` | `3.0` | Delay before reconnecting to a DevKit endpoint |
 | `RCT_MAX_MESSAGE_SIZE` | `16777216` | Maximum WebSocket message size. Use `0` or less for no limit |
@@ -116,8 +116,8 @@ Run the container:
 
 ```bash
 docker run --rm \
-  -p 8765:8765 \
-  -e RCT_DEVKIT_URLS="ws://host.docker.internal:4567,ws://host.docker.internal:4568" \
+  -p 4567:4567 \
+  -e RCT_DEVKIT_URLS="ws://host.docker.internal:4568,ws://host.docker.internal:4569" \
   -e RCT_DEVKIT_VEHICLE_IDS="1,2" \
   autodrive-rct
 ```
