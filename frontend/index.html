@@ -95,11 +95,27 @@
       .bd-mode-toggle .dropdown-menu .active .bi {
         display: block !important
       }
+
+      .rct-navbar {
+        background-color: #368dcf;
+      }
+
+      .rct-brand-logo {
+        display: block;
+        height: 32px;
+        width: auto;
+      }
+
+      .rct-navbar-title {
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 1.5rem;
+      }
     </style>
   </head>
   <body>
     <header data-bs-theme="dark">
-      <div class="collapse text-bg-dark" id="navbarHeader">
+      <div class="collapse rct-navbar text-white" id="navbarHeader">
         <div class="container">
           <div class="row">
             <div class="col-sm-8 col-md-7 py-4">
@@ -123,12 +139,16 @@
           </div>
         </div>
       </div>
-      <div class="navbar navbar-dark bg-dark shadow-sm">
-        <div class="container">
-          <a href="#" class="navbar-brand d-flex align-items-center">
-            <img src="https://autodrive-ecosystem.github.io/assets/images/logos/AutoDRIVE%20Extended%20Logo%203.png" width="100px">
-            <strong>Race Control Center</strong>
+      <div class="navbar navbar-dark rct-navbar shadow-sm">
+        <div class="container position-relative">
+          <a href="#" class="navbar-brand d-flex align-items-center py-0">
+            <img
+              src="https://autodrive-ecosystem.github.io/assets/images/logos/AutoDRIVE%20Extended%20Logo%203.png"
+              class="rct-brand-logo"
+              alt="AutoDRIVE"
+            >
           </a>
+          <strong class="position-absolute rct-navbar-title text-white">Race Control Center</strong>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarHeader" aria-controls="navbarHeader" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
           </button>
