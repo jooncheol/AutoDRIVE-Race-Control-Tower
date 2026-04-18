@@ -111,9 +111,27 @@
         transform: translateX(-50%);
         font-size: 1.5rem;
       }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        min-height: 100vh;
+      }
+
+      main,
+      .rct-shell,
+      .rct-shell-row,
+      #main-content,
+      #left-sidebar,
+      #right-sidebar {
+        min-height: 0;
+      }
     </style>
   </head>
-  <body>
+  <body class="d-flex flex-column">
     <header data-bs-theme="dark">
       <div class="collapse rct-navbar text-white" id="navbarHeader">
         <div class="container">
@@ -155,10 +173,23 @@
         </div>
       </div>
     </header>
-    <main>
+    <main class="flex-grow-1 d-flex">
+      <div class="container-fluid rct-shell flex-grow-1 d-flex">
+        <div class="row rct-shell-row flex-grow-1 w-100">
+          <div id="left-sidebar" class="col-sm-2 text-center h-100" style="background-color: #f8f9fa;">
+            left
+          </div>
+          <div id="main-content" class="col-sm-8 h-100" style="background-color: #000000;">
+          </div>
+          <div id="right-sidebar" class="col-sm-2 text-center h-100" style="background-color: #f8f9fa;">
+            right
+          </div>
+        </div>
+      </div>
     </main>
-    <footer class="text-body-secondary py-5">
+    <footer class="text-body-secondary py-2">
       <div class="container">
+        <p class="mb-0">&copy; 2017–2024 Company Name</p>
       </div>
     </footer>
     <script src="vendor/bootstrap/bootstrap-5.3.8.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"></script>
