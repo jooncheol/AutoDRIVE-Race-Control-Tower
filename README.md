@@ -1,6 +1,6 @@
 # AutoDRIVE Race Control Tower
 
-![AutoDRIVE RCT Illustrator](frontend/autodrive-rct.png)
+![AutoDRIVE RCT Illustrator](frontend/assets/autodrive-rct.png)
 
 AutoDRIVE Race Control Tower (RCT) is a high-performance WebSocket proxy for the AutoDRIVE RoboRacer H2H Simulator. It lets one simulator interact with two independent DevKit bridge instances without changing the existing AutoDRIVE protocol or the DevKit bridge code.
 
