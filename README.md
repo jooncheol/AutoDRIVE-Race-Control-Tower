@@ -8,7 +8,7 @@ AutoDRIVE Race Control Tower (RCT) is a high-performance WebSocket proxy for the
 flowchart LR
     sim["AutoDRIVE H2H Simulator<br/>(WS client)<br/>/"]
     rct["AutoDRIVE RCT<br/>(WS server + Vehicle id rewriting proxy)"]
-    ui["RCT Web Frontend<br/>(WS client)<br/>/frontend"]
+    ui["RCT Web Frontend<br/>(monitor WS client)<br/>/monitor/WS/latest"]
     dk1["DevKit Instance 1<br/>assigned simulator id: 1<br/>expects roboracer_1 / V1"]
     dk2["DevKit Instance 2<br/>assigned simulator id: 2<br/>expects roboracer_1 / V1"]
 
@@ -53,7 +53,8 @@ sequenceDiagram
 
 - RCT HTTP frontend: `http://<rct-host>:4567/`
 - AutoDRIVE Simulator client: `ws://<rct-host>:4567/` (Working as Devkit Proxy)
-- RCT browser frontend client: `ws://<rct-host>:4567/frontend` (Communication between Frontend and RCT)
+- RCT monitor REST endpoint: `http://<rct-host>:4567/monitor/REST/latest`
+- RCT browser monitor client: `ws://<rct-host>:4567/monitor/WS/latest`
 - DevKit upstream 1: configured by `RCT_DEVKIT_URLS`
 - DevKit upstream 2: configured by `RCT_DEVKIT_URLS`
 
@@ -103,6 +104,17 @@ Environment variables:
 ## Frontend
 
 Run RCT, then open `http://localhost:4567/` in a browser. RCT serves `frontend/index.html` and static assets from the bundled `frontend` directory. The page uses Bootstrap and logs only the RCT WebSocket connection state to the browser console.
+
+## Monitor Protocol
+
+The browser frontend talks to the RCT server through AutoDRIVE RCT Monitor Protocol. Current version is `0.1`; `latest` is an alias for `0.1`.
+
+- REST state endpoint: `/monitor/REST/latest`
+- WebSocket event endpoint: `/monitor/WS/latest`
+
+See `docs/monitor-protocol.md` for the protocol structure and planned command/event surfaces.
+
+REST monitor snapshots and WS monitor events are backed by the same in-process `RaceControlState`. Monitor WS fanout is handled separately by `MonitorEventHub`, so state updates are kept separate from network sends.
 
 ## Docker
 

@@ -168,6 +168,12 @@
       .rct-stat-list {
         font-size: 0.875rem;
       }
+
+      .rct-main-canvas {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
     </style>
   </head>
   <body class="d-flex flex-column">
@@ -227,9 +233,9 @@
             <h2 class="h6 mt-3">Roboracer 1</h2>
             <div class="px-2 text-start">
               <label for="roboracer1Ip" class="form-label small mb-1">Hostname (IP)</label>
-              <input id="roboracer1Ip" class="form-control form-control-sm mb-2" type="text">
+              <input id="roboracer1Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
               <label for="roboracer1Port" class="form-label small mb-1">Port Number</label>
-              <input id="roboracer1Port" class="form-control form-control-sm mb-3" type="number">
+              <input id="roboracer1Port" class="form-control form-control-sm mb-3" type="number" value="4568">
               <button id="roboracer1Status" class="btn btn-sm btn-outline-secondary w-100" type="button">Disconnected</button>
               <dl class="rct-stat-list mt-3 mb-0">
                 <div class="d-flex justify-content-between">
@@ -250,20 +256,25 @@
                 </div>
                 <div class="d-flex justify-content-between">
                   <dt>Best Lap:</dt>
-                  <dd id="roboracer1BestLap" class="mb-0">00:00</dd>
+                  <dd id="roboracer1BestLap" class="mb-1">00:00</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Penalty:</dt>
+                  <dd id="roboracer1TotalPenalty" class="mb-0">00:00</dd>
                 </div>
               </dl>
             </div>
           </div>
-          <div id="main-content" class="col-sm-8 h-100" style="background-color: #000000;">
+          <div id="main-content" class="col-sm-8 h-100 p-0" style="background-color: #000000;">
+            <canvas id="mainCanvas" class="rct-main-canvas" aria-label="AutoDRIVE Race Control Tower instructions"></canvas>
           </div>
           <div id="right-sidebar" class="col-sm-2 text-center h-100 rct-sidebar">
             <h2 class="h6 mt-3">Roboracer 2</h2>
             <div class="px-2 text-start">
               <label for="roboracer2Ip" class="form-label small mb-1">Hostname (IP)</label>
-              <input id="roboracer2Ip" class="form-control form-control-sm mb-2" type="text">
+              <input id="roboracer2Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
               <label for="roboracer2Port" class="form-label small mb-1">Port Number</label>
-              <input id="roboracer2Port" class="form-control form-control-sm mb-3" type="number">
+              <input id="roboracer2Port" class="form-control form-control-sm mb-3" type="number" value="4569">
               <button id="roboracer2Status" class="btn btn-sm btn-outline-secondary w-100" type="button">Disconnected</button>
               <dl class="rct-stat-list mt-3 mb-0">
                 <div class="d-flex justify-content-between">
@@ -284,7 +295,11 @@
                 </div>
                 <div class="d-flex justify-content-between">
                   <dt>Best Lap:</dt>
-                  <dd id="roboracer2BestLap" class="mb-0">00:00</dd>
+                  <dd id="roboracer2BestLap" class="mb-1">00:00</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Penalty:</dt>
+                  <dd id="roboracer2TotalPenalty" class="mb-0">00:00</dd>
                 </div>
               </dl>
             </div>
@@ -311,11 +326,15 @@
       let rctSocket = null;
       const rctStatusDot = document.getElementById("rctStatusDot");
       const rctStatusText = document.getElementById("rctStatusText");
+      const mainCanvas = document.getElementById("mainCanvas");
+      const mainContext = mainCanvas.getContext("2d");
+      const mainImage = new Image();
+      let mainCanvasMode = "init";
 
       function frontendWebSocketUrl() {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const host = window.location.host || "localhost:4567";
-        return `${protocol}//${host}/frontend`;
+        return `${protocol}//${host}/monitor/WS/latest`;
       }
 
       function setRctStatus(status) {
@@ -348,6 +367,132 @@
         });
       }
 
+      function roundedRect(context, x, y, width, height, radius) {
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.lineTo(x + width - radius, y);
+        context.quadraticCurveTo(x + width, y, x + width, y + radius);
+        context.lineTo(x + width, y + height - radius);
+        context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        context.lineTo(x + radius, y + height);
+        context.quadraticCurveTo(x, y + height, x, y + height - radius);
+        context.lineTo(x, y + radius);
+        context.quadraticCurveTo(x, y, x + radius, y);
+        context.closePath();
+      }
+
+      function wrapCanvasText(context, text, maxWidth) {
+        const words = text.split(" ");
+        const lines = [];
+        let line = "";
+
+        for (const word of words) {
+          const candidate = line ? `${line} ${word}` : word;
+          if (context.measureText(candidate).width <= maxWidth || !line) {
+            line = candidate;
+          } else {
+            lines.push(line);
+            line = word;
+          }
+        }
+
+        if (line) {
+          lines.push(line);
+        }
+
+        return lines;
+      }
+
+      function resizeMainCanvas() {
+        const pixelRatio = window.devicePixelRatio || 1;
+        const rect = mainCanvas.getBoundingClientRect();
+        const width = Math.max(1, Math.round(rect.width * pixelRatio));
+        const height = Math.max(1, Math.round(rect.height * pixelRatio));
+
+        if (mainCanvas.width !== width || mainCanvas.height !== height) {
+          mainCanvas.width = width;
+          mainCanvas.height = height;
+        }
+
+        mainContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        return {
+          height: rect.height,
+          width: rect.width,
+        };
+      }
+
+      function drawInitModeContent(width, height) {
+        if (mainImage.complete && mainImage.naturalWidth > 0) {
+          const imageScale = Math.min(
+            (width * 0.96) / mainImage.naturalWidth,
+            (height * 0.45) / mainImage.naturalHeight,
+          );
+          const imageWidth = mainImage.naturalWidth * imageScale;
+          const imageHeight = mainImage.naturalHeight * imageScale;
+          const imageX = (width - imageWidth) / 2;
+          const imageY = height - imageHeight - 20;
+          mainContext.drawImage(mainImage, imageX, imageY, imageWidth, imageHeight);
+        }
+
+        const host = window.location.host || "localhost:4567";
+        const instructions = [
+          "1. Enter RCT Server-reachable Hostname (IP) and Port Number for Roboracer 1 and 2, then connect.",
+          `2. Connect AutoDRIVE Simulator to RCT (${host}) to start race control.`,
+          "3. Enjoy the H2H racing action and watch the stats update in real-time!",
+        ];
+        const boxWidth = Math.min(width * 0.9, 640);
+        const padding = 20;
+        const titleHeight = 28;
+        const titleGap = 12;
+        const lineHeight = 24;
+        const itemGap = 8;
+        mainContext.font = "16px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+        const wrappedItems = instructions.map((text) => wrapCanvasText(mainContext, text, boxWidth - padding * 2));
+        const lineCount = wrappedItems.reduce((total, lines) => total + lines.length, 0);
+        const boxHeight = padding * 2 + titleHeight + titleGap + lineCount * lineHeight + (wrappedItems.length - 1) * itemGap;
+        const boxX = (width - boxWidth) / 2;
+        const boxY = Math.max(24, height * 0.32 - boxHeight / 2);
+
+        mainContext.fillStyle = "rgba(255, 255, 255, 0.5)";
+        roundedRect(mainContext, boxX, boxY, boxWidth, boxHeight, 8);
+        mainContext.fill();
+
+        mainContext.fillStyle = "#111827";
+        mainContext.textBaseline = "top";
+        mainContext.font = "700 20px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        mainContext.fillText("How to use RCT for H2H Racing?", boxX + padding, boxY + padding);
+
+        mainContext.font = "16px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        let textY = boxY + padding + titleHeight + titleGap;
+        for (const lines of wrappedItems) {
+          for (const line of lines) {
+            mainContext.fillText(line, boxX + padding, textY);
+            textY += lineHeight;
+          }
+          textY += itemGap;
+        }
+      }
+
+      function drawMainCanvas() {
+        const { height, width } = resizeMainCanvas();
+        mainContext.clearRect(0, 0, width, height);
+        mainContext.fillStyle = "#000000";
+        mainContext.fillRect(0, 0, width, height);
+
+        if (mainCanvasMode === "init") {
+          drawInitModeContent(width, height);
+        }
+      }
+
+      mainImage.addEventListener("load", drawMainCanvas);
+      mainImage.src = "assets/autodrive-rct.png";
+      window.addEventListener("resize", drawMainCanvas);
+      if ("ResizeObserver" in window) {
+        new ResizeObserver(drawMainCanvas).observe(mainCanvas);
+      }
+
+      drawMainCanvas();
       connectRctStatus();
     </script>
   </body>

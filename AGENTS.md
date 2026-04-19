@@ -5,13 +5,16 @@ This repository contains AutoDRIVE Race Control Tower (RCT), a native WebSocket 
 ## Project Rules
 
 - Keep the runtime on Python 3.12 and the `websockets` package.
-- RCT accepts simulator clients on `/` and browser frontend clients on `/frontend`.
+- RCT accepts simulator clients on `/` and browser monitor clients on `/monitor/WS/latest` or `/monitor/WS/0.1`.
 - RCT connects upstream to DevKit bridge instances listed in `RCT_DEVKIT_URLS`.
 - Each DevKit URL receives one simulator vehicle id from `RCT_DEVKIT_VEHICLE_IDS`.
 - Simulator-to-DevKit messages must be rewritten from the assigned simulator id to id `1`.
 - DevKit-to-Simulator messages must be rewritten from id `1` back to the assigned simulator id.
 - Preserve original payload shape whenever possible. Only rewrite vehicle identifiers.
 - Frontend observation events may use the RCT JSON envelope format.
+- REST monitor responses and WS monitor events must read shared state from `RaceControlState`.
+- Monitor WebSocket client fanout must go through `MonitorEventHub`.
+- Do not perform network I/O while mutating shared race-control state. Update state first, then broadcast events.
 
 ## Supported Identifier Forms
 
