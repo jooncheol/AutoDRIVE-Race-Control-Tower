@@ -47,6 +47,17 @@ ANSI_GRAY = "\033[90m"
 ANSI_RESET = "\033[0m"
 
 
+def configure_socketio_logging(settings: Settings) -> None:
+    library_loggers = {
+        "socketio.client": settings.debug_socketio_client,
+        "engineio.client": settings.debug_engineio_client,
+        "socketio.server": settings.debug_socketio_server,
+        "engineio.server": settings.debug_engineio_server,
+    }
+    for logger_name, debug_enabled in library_loggers.items():
+        logging.getLogger(logger_name).setLevel(logging.INFO if debug_enabled else logging.WARNING)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -191,6 +202,10 @@ def devkit_url_from_host_port(host: str, port: int) -> str:
     return f"ws://{host}:{port}"
 
 
+def devkit_endpoint_key(host: str, port: int) -> tuple[str, int]:
+    return (host.strip().lower(), port)
+
+
 @dataclass
 class DevKitConnection:
     name: str
@@ -233,12 +248,16 @@ class DevKitConnection:
         async def on_message(data: Any) -> None:
             await self.tower.handle_devkit_event(self, "message", (data,))
 
+        async def on_bridge(*args: Any) -> None:
+            await self.tower.handle_devkit_event(self, "Bridge", args)
+
         async def on_any_event(event: str, *args: Any) -> None:
             await self.tower.handle_devkit_event(self, event, args)
 
         self.client.on("connect", on_connect)
         self.client.on("disconnect", on_disconnect)
         self.client.on("message", on_message)
+        self.client.on("Bridge", on_bridge)
         self.client.on("*", on_any_event)
 
     def start(self) -> None:
@@ -248,6 +267,22 @@ class DevKitConnection:
             self._run_task = asyncio.create_task(self.run(), name=f"{self.name}:connect")
         if self._send_task is None or self._send_task.done():
             self._send_task = asyncio.create_task(self.send_loop(), name=f"{self.name}:send")
+
+    def _client_connected(self) -> bool:
+        connected = getattr(self.client, "connected", None)
+        if connected is True:
+            return True
+
+        namespaces = getattr(self.client, "namespaces", None)
+        if isinstance(namespaces, dict):
+            return "/" in namespaces or bool(namespaces)
+        if namespaces:
+            return True
+
+        eio_connected = getattr(self.client.eio, "state", "disconnected") == "connected"
+        if connected is False:
+            return False
+        return eio_connected
 
     async def configure(self, host: str, port: int) -> None:
         url = devkit_url_from_host_port(host, port)
@@ -264,7 +299,7 @@ class DevKitConnection:
         for task in tasks:
             task.cancel()
 
-        if self.client.connected:
+        if self._client_connected():
             await self.client.disconnect()
 
         if tasks:
@@ -287,14 +322,25 @@ class DevKitConnection:
 
     async def run(self) -> None:
         while self.tower.has_simulators and self.configured and self.enabled:
-            if not self.client.connected:
-                try:
-                    await self.client.connect(
-                        normalize_socketio_url(self.url),
-                        transports=["websocket"],
-                        socketio_path=SOCKETIO_PATH,
-                        wait_timeout=self.settings.ping_timeout_seconds,
+            if not self._client_connected():
+                eio_state = getattr(self.client.eio, "state", "disconnected")
+                if eio_state != "disconnected":
+                    LOGGER.warning(
+                        "%s has Engine.IO state %s without Socket.IO namespace; disconnecting before reconnect",
+                        self.name,
+                        eio_state,
                     )
+                    await self.client.disconnect()
+
+                try:
+                    connect_kwargs: dict[str, Any] = {
+                        "url": normalize_socketio_url(self.url),
+                        "transports": ["websocket"],
+                        "socketio_path": SOCKETIO_PATH,
+                    }
+                    if "wait_timeout" in inspect.signature(self.client.connect).parameters:
+                        connect_kwargs["wait_timeout"] = self.settings.ping_timeout_seconds
+                    await self.client.connect(**connect_kwargs)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -307,7 +353,7 @@ class DevKitConnection:
         while True:
             event, args = await self.queue.get()
             try:
-                while not self.client.connected:
+                while not self._client_connected():
                     await asyncio.sleep(0.05)
 
                 data = socketio_data_from_args(args)
@@ -336,7 +382,7 @@ class RaceControlTower:
             logger=settings.debug_socketio_server,
             engineio_logger=settings.debug_engineio_server,
             max_http_buffer_size=settings.max_message_size or 100_000_000,
-            ping_interval=settings.ping_interval_seconds,
+            ping_interval=(settings.ping_interval_seconds, settings.ping_timeout_seconds),
             ping_timeout=settings.ping_timeout_seconds,
         )
         self.devkits = [
@@ -431,12 +477,16 @@ class RaceControlTower:
         async def message(sid: str, data: Any) -> None:
             await self.handle_simulator_event(sid, "message", (data,))
 
+        async def bridge(sid: str, *args: Any) -> None:
+            await self.handle_simulator_event(sid, "Bridge", args)
+
         async def any_event(event: str, sid: str, *args: Any) -> None:
             await self.handle_simulator_event(sid, event, args)
 
         self.sio.on("connect", connect)
         self.sio.on("disconnect", disconnect)
         self.sio.on("message", message)
+        self.sio.on("Bridge", bridge)
         self.sio.on("*", any_event)
 
     def _register_engineio_compat_handlers(self) -> None:
@@ -460,7 +510,8 @@ class RaceControlTower:
 
     async def _ensure_socketio_namespace_for_event(self, eio_sid: str, data: Any) -> None:
         try:
-            packet = self.sio.packet_class(encoded_packet=data)
+            packet_class = getattr(self.sio, "packet_class", socketio_packet.Packet)
+            packet = packet_class(encoded_packet=data)
         except (TypeError, ValueError):
             return
 
@@ -468,8 +519,8 @@ class RaceControlTower:
             return
 
         namespace = packet.namespace or "/"
-        sid = self.sio.manager.sid_from_eio_sid(eio_sid, namespace)
-        if self.sio.manager.is_connected(sid, namespace):
+        sid = self._socketio_sid_from_eio_sid(eio_sid, namespace)
+        if sid is not None and self.sio.manager.is_connected(sid, namespace):
             return
 
         event = packet.data[0] if isinstance(packet.data, list) and packet.data else "unknown"
@@ -479,7 +530,23 @@ class RaceControlTower:
             namespace,
             event,
         )
-        await self.sio._handle_connect(eio_sid, namespace, None)
+        await self._handle_implicit_socketio_connect(eio_sid, namespace)
+
+    def _socketio_sid_from_eio_sid(self, eio_sid: str, namespace: str) -> str | None:
+        sid_from_eio_sid = getattr(self.sio.manager, "sid_from_eio_sid", None)
+        if callable(sid_from_eio_sid):
+            return sid_from_eio_sid(eio_sid, namespace)
+        return eio_sid
+
+    async def _handle_implicit_socketio_connect(self, eio_sid: str, namespace: str) -> None:
+        handle_connect = self.sio._handle_connect
+        parameters = inspect.signature(handle_connect).parameters
+        if len(parameters) >= 3:
+            result = handle_connect(eio_sid, namespace, None)
+        else:
+            result = handle_connect(eio_sid, namespace)
+        if inspect.isawaitable(result):
+            await result
 
     async def handle_static(self, request: web.Request) -> web.Response:
         static_response = build_static_file_response(request.rel_url.raw_path, FRONTEND_ROOT)
@@ -587,6 +654,8 @@ class RaceControlTower:
         port: int,
         enabled: bool,
     ) -> None:
+        if enabled:
+            self.ensure_unique_devkit_endpoint(devkit, host, port)
         await devkit.configure(host, port)
         devkit.enabled = enabled
         self.state.set_devkit_enabled(devkit.name, enabled)
@@ -600,7 +669,10 @@ class RaceControlTower:
         port: int | None = None,
     ) -> None:
         if host is not None and port is not None:
+            self.ensure_unique_devkit_endpoint(devkit, host, port)
             await devkit.configure(host, port)
+        elif devkit.configured and devkit.port is not None:
+            self.ensure_unique_devkit_endpoint(devkit, devkit.host, devkit.port)
         devkit.enabled = True
         self.state.set_devkit_enabled(devkit.name, True)
         devkit.start()
@@ -620,6 +692,16 @@ class RaceControlTower:
             devkit.port,
             devkit.configured,
         )
+
+    def ensure_unique_devkit_endpoint(self, target: DevKitConnection, host: str, port: int) -> None:
+        target_key = devkit_endpoint_key(host, port)
+        for devkit in self.devkits:
+            if devkit is target or not devkit.enabled or not devkit.configured or devkit.port is None:
+                continue
+            if devkit_endpoint_key(devkit.host, devkit.port) == target_key:
+                raise ValueError(
+                    f"{target.name} endpoint {host.strip()}:{port} is already assigned to {devkit.name}"
+                )
 
     async def handle_simulator_event(self, sid: str, event: str, args: tuple[Any, ...]) -> None:
         if sid not in self.simulator_sids:
@@ -937,6 +1019,7 @@ class RaceControlTower:
             else:
                 raise ValueError(f"unsupported monitor command {command_name!r}")
         except ValueError as exc:
+            LOGGER.warning("monitor command %s rejected: %s", command_name, exc)
             await self.broadcast_monitor(envelope("error", source="monitor", message=str(exc)))
             return True
 
@@ -1000,10 +1083,18 @@ class RaceControlTower:
     async def emit_to_simulators(self, event: str, args: tuple[Any, ...]) -> None:
         data = socketio_data_from_args(args)
         for sid in tuple(self.simulator_sids):
-            if event == "message":
-                await self.sio.send(data, to=sid)
-            else:
-                await self.sio.emit(event, data=data, to=sid)
+            await self.emit_to_simulator_sid(sid, event, data)
+
+    async def emit_to_simulator_sid(self, sid: str, event: str, data: Any) -> None:
+        emit_internal = getattr(self.sio, "_emit_internal", None)
+        if callable(emit_internal):
+            await emit_internal(sid, event, data, namespace="/")
+            return
+
+        if event == "message":
+            await self.sio.send(data, to=sid)
+        else:
+            await self.sio.emit(event, data=data, to=sid)
 
     def _get_devkit(self, name: str) -> DevKitConnection | None:
         return next((devkit for devkit in self.devkits if devkit.name == name), None)
@@ -1047,6 +1138,7 @@ async def async_main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     settings = load_settings()
+    configure_socketio_logging(settings)
     tower = RaceControlTower(settings)
     await tower.start()
 

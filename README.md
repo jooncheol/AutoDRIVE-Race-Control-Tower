@@ -83,17 +83,14 @@ aiohappyeyeballs==2.6.1
 aiohttp==3.13.5
 aiosignal==1.4.0
 attrs==26.1.0
-bidict==0.23.1
 frozenlist==1.8.0
-h11==0.16.0
 idna==3.11
 multidict==6.7.1
 propcache==0.4.1
-python-engineio==4.13.1
-python-socketio==5.16.1
-simple-websocket==1.1.0
+python-engineio==3.13.0
+python-socketio==4.2.0
+six==1.17.0
 typing_extensions==4.15.0
-wsproto==1.3.2
 yarl==1.23.0
 ```
 
@@ -120,6 +117,10 @@ Environment variables:
 | `RCT_PING_TIMEOUT_SECONDS` | `20` | Socket.IO ping timeout |
 | `RCT_DEBUG_ENGINEIO_MESSAGES` | `false` | Log raw Engine.IO message packets for compatibility debugging |
 | `RCT_DEBUG_ENGINEIO_MAX_CHARS` | `2000` | Maximum raw Engine.IO packet preview length |
+| `RCT_DEBUG_SOCKETIO_CLIENT` | `false` | Enable python-socketio client logs for DevKit connections |
+| `RCT_DEBUG_ENGINEIO_CLIENT` | `false` | Enable python-engineio client logs for DevKit connections, including ping/pong and transport close details |
+| `RCT_DEBUG_SOCKETIO_SERVER` | `false` | Enable python-socketio server logs for simulator connections |
+| `RCT_DEBUG_ENGINEIO_SERVER` | `false` | Enable python-engineio server logs for simulator connections |
 | `RCT_DEBUG_BRIDGE_FLOW` | `false` | Log compact ANSI-colored Bridge flow timeline |
 | `RCT_LOG_BRIDGE_MESSAGES` | `false` | Pretty-print incoming simulator `Bridge` events with LIDAR/camera values omitted |
 | `RCT_LOG_BRIDGE_MAX_CHARS` | `20000` | Maximum pretty-printed `Bridge` payload length |

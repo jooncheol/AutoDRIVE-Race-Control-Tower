@@ -37,6 +37,18 @@ fi
 if [[ -n "${RCT_DEBUG_ENGINEIO_MAX_CHARS+x}" ]]; then
   debug_env_flags+=(-e "RCT_DEBUG_ENGINEIO_MAX_CHARS=${RCT_DEBUG_ENGINEIO_MAX_CHARS}")
 fi
+if [[ -n "${RCT_DEBUG_SOCKETIO_CLIENT+x}" ]]; then
+  debug_env_flags+=(-e "RCT_DEBUG_SOCKETIO_CLIENT=${RCT_DEBUG_SOCKETIO_CLIENT}")
+fi
+if [[ -n "${RCT_DEBUG_ENGINEIO_CLIENT+x}" ]]; then
+  debug_env_flags+=(-e "RCT_DEBUG_ENGINEIO_CLIENT=${RCT_DEBUG_ENGINEIO_CLIENT}")
+fi
+if [[ -n "${RCT_DEBUG_SOCKETIO_SERVER+x}" ]]; then
+  debug_env_flags+=(-e "RCT_DEBUG_SOCKETIO_SERVER=${RCT_DEBUG_SOCKETIO_SERVER}")
+fi
+if [[ -n "${RCT_DEBUG_ENGINEIO_SERVER+x}" ]]; then
+  debug_env_flags+=(-e "RCT_DEBUG_ENGINEIO_SERVER=${RCT_DEBUG_ENGINEIO_SERVER}")
+fi
 if [[ -n "${RCT_DEBUG_BRIDGE_FLOW+x}" ]]; then
   debug_env_flags+=(-e "RCT_DEBUG_BRIDGE_FLOW=${RCT_DEBUG_BRIDGE_FLOW}")
 fi
