@@ -658,9 +658,17 @@ class RaceControlTower:
         self.bridge_cache.update_incoming(payload)
         target_vehicle_id = self.bridge_cache.dequeue_response_target()
         target_devkits = (
-            [devkit for devkit in self.devkits if devkit.vehicle_id == target_vehicle_id]
+            [
+                devkit
+                for devkit in self.devkits
+                if devkit.vehicle_id == target_vehicle_id and devkit.connected
+            ]
             if target_vehicle_id is not None
-            else [devkit for devkit in self.devkits if devkit.configured and devkit.enabled]
+            else [
+                devkit
+                for devkit in self.devkits
+                if devkit.configured and devkit.enabled and devkit.connected
+            ]
         )
 
         targets: list[dict[str, Any]] = []
