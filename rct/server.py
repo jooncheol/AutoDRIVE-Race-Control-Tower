@@ -17,6 +17,7 @@ import socketio
 from socketio import packet as socketio_packet
 from aiohttp import WSMsgType, web
 
+from .bridge import BridgeCache, BridgeRateTracker
 from .config import Settings, load_settings
 from .monitor import MonitorEventHub, safe_send
 from .monitor_protocol import (
@@ -39,7 +40,7 @@ from .static_files import build_static_file_response
 LOGGER = logging.getLogger("rct")
 FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 SOCKETIO_PATH = "socket.io"
-BRIDGE_OMITTED_KEY_PARTS = ("array", "image")
+BRIDGE_OMITTED_KEY_PARTS = ("lidar", "camera", "array", "image")
 
 
 def utc_now() -> str:
@@ -212,6 +213,7 @@ class DevKitConnection:
         async def on_connect() -> None:
             self.tower.set_devkit_connected(self, True)
             LOGGER.info("%s connected to %s", self.name, self.url)
+            await self.tower.send_cached_incoming_bridge(self)
             await self.tower.publish_status()
 
         async def on_disconnect(*_: Any) -> None:
@@ -316,6 +318,8 @@ class RaceControlTower:
         self.state = RaceControlState()
         self.simulator_sids: set[str] = set()
         self.monitor_hub = MonitorEventHub()
+        self.bridge_cache = BridgeCache(pending_limit=settings.client_queue_size)
+        self.bridge_rates = BridgeRateTracker()
         self.sio = socketio.AsyncServer(
             async_mode="aiohttp",
             cors_allowed_origins="*",
@@ -611,12 +615,9 @@ class RaceControlTower:
         if sid not in self.simulator_sids:
             return
 
-        if self.settings.log_bridge_messages and event == "Bridge":
-            LOGGER.info(
-                "simulator Bridge data sid=%s\n%s",
-                sid,
-                bridge_log_payload(args, self.settings.log_bridge_max_chars),
-            )
+        if event == "Bridge":
+            await self.handle_simulator_bridge_event(sid, args)
+            return
 
         targets: list[dict[str, Any]] = []
         for devkit in self.devkits:
@@ -636,7 +637,69 @@ class RaceControlTower:
             )
         )
 
+    async def handle_simulator_bridge_event(self, sid: str, args: tuple[Any, ...]) -> None:
+        if self.settings.log_bridge_messages:
+            LOGGER.info(
+                "simulator Bridge data sid=%s\n%s",
+                sid,
+                bridge_log_payload(args, self.settings.log_bridge_max_chars),
+            )
+
+        payload = socketio_data_from_args(args)
+        self.bridge_cache.update_incoming(payload)
+        target_vehicle_id = self.bridge_cache.dequeue_response_target()
+        target_devkits = (
+            [devkit for devkit in self.devkits if devkit.vehicle_id == target_vehicle_id]
+            if target_vehicle_id is not None
+            else [devkit for devkit in self.devkits if devkit.configured and devkit.enabled]
+        )
+
+        targets: list[dict[str, Any]] = []
+        for devkit in target_devkits:
+            rewritten_args = rewrite_args_for_devkit(args, devkit.vehicle_id)
+            if rewritten_args is None:
+                continue
+            await devkit.enqueue("Bridge", rewritten_args)
+            if target_vehicle_id is not None:
+                self.record_bridge_rate(devkit)
+            targets.append({"name": devkit.name, "vehicle_id": devkit.vehicle_id})
+
+        await self.broadcast_monitor(
+            envelope(
+                "frame",
+                source="simulator",
+                socketio_event="Bridge",
+                response_vehicle_id=target_vehicle_id,
+                targets=targets,
+                args=[encode_socketio_arg(arg) for arg in args],
+            )
+        )
+
+    async def send_cached_incoming_bridge(self, devkit: DevKitConnection) -> None:
+        cached_payload = self.bridge_cache.current_incoming()
+        if cached_payload is None:
+            return
+
+        rewritten_args = rewrite_args_for_devkit((cached_payload,), devkit.vehicle_id)
+        if rewritten_args is None:
+            return
+
+        await devkit.enqueue("Bridge", rewritten_args)
+        await self.broadcast_monitor(
+            envelope(
+                "frame",
+                source="simulator-cache",
+                socketio_event="Bridge",
+                targets=[{"name": devkit.name, "vehicle_id": devkit.vehicle_id}],
+                args=[encode_socketio_arg(cached_payload)],
+            )
+        )
+
     async def handle_devkit_event(self, devkit: DevKitConnection, event: str, args: tuple[Any, ...]) -> None:
+        if event == "Bridge":
+            await self.handle_devkit_bridge_event(devkit, args)
+            return
+
         rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
         await self.emit_to_simulators(event, rewritten_args)
         await self.broadcast_monitor(
@@ -648,6 +711,34 @@ class RaceControlTower:
                 socketio_event=event,
                 args=[encode_socketio_arg(arg) for arg in rewritten_args],
             )
+        )
+
+    async def handle_devkit_bridge_event(self, devkit: DevKitConnection, args: tuple[Any, ...]) -> None:
+        rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
+        rewritten_payload = socketio_data_from_args(rewritten_args)
+        outgoing_payload = self.bridge_cache.update_outgoing(rewritten_payload)
+        outgoing_args = (outgoing_payload,)
+        self.bridge_cache.enqueue_response_target(devkit.vehicle_id)
+
+        await self.emit_to_simulators("Bridge", outgoing_args)
+        await self.broadcast_monitor(
+            envelope(
+                "frame",
+                source=devkit.name,
+                vehicle_id=devkit.vehicle_id,
+                target="simulator",
+                socketio_event="Bridge",
+                pending_bridge_responses=self.bridge_cache.pending_response_count,
+                args=[encode_socketio_arg(arg) for arg in outgoing_args],
+            )
+        )
+
+    def record_bridge_rate(self, devkit: DevKitConnection) -> None:
+        rates = self.bridge_rates.record(devkit.vehicle_id)
+        self.state.set_devkit_bridge_rate(
+            devkit.name,
+            bridge_hz=float(rates["bridge_hz"]),
+            bridge_per_minute=int(rates["bridge_per_minute"]),
         )
 
     async def handle_monitor_message(self, message: str) -> None:

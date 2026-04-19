@@ -18,6 +18,8 @@ class DevKitMonitorState:
     enabled: bool = True
     connected: bool = False
     queued_messages: int = 0
+    bridge_hz: float = 0.0
+    bridge_per_minute: int = 0
 
 
 class RaceControlState:
@@ -89,6 +91,23 @@ class RaceControlState:
             if self._devkits[name].queued_messages == queued_messages:
                 return
             self._devkits[name].queued_messages = queued_messages
+            self._revision += 1
+
+    def set_devkit_bridge_rate(
+        self,
+        name: str,
+        bridge_hz: float,
+        bridge_per_minute: int,
+    ) -> None:
+        with self._lock:
+            devkit = self._devkits[name]
+            if (
+                devkit.bridge_hz == bridge_hz
+                and devkit.bridge_per_minute == bridge_per_minute
+            ):
+                return
+            devkit.bridge_hz = bridge_hz
+            devkit.bridge_per_minute = bridge_per_minute
             self._revision += 1
 
     def snapshot(self) -> dict[str, Any]:

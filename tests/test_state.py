@@ -36,6 +36,8 @@ class RaceControlStateTests(unittest.TestCase):
                 "enabled": True,
                 "connected": True,
                 "queued_messages": 3,
+                "bridge_hz": 0.0,
+                "bridge_per_minute": 0,
             },
         )
 
@@ -53,6 +55,17 @@ class RaceControlStateTests(unittest.TestCase):
         self.assertEqual(snapshot["devkits"][0]["port"], 4568)
         self.assertTrue(snapshot["devkits"][0]["configured"])
         self.assertFalse(snapshot["devkits"][0]["enabled"])
+
+    def test_snapshot_tracks_devkit_bridge_rate(self):
+        state = RaceControlState()
+        state.configure_devkits([DevKitMonitorState("devkit:1", 1, "")])
+
+        state.set_devkit_bridge_rate("devkit:1", 0.5, 30)
+
+        snapshot = state.snapshot()
+
+        self.assertEqual(snapshot["devkits"][0]["bridge_hz"], 0.5)
+        self.assertEqual(snapshot["devkits"][0]["bridge_per_minute"], 30)
 
     def test_revision_changes_only_when_values_change(self):
         state = RaceControlState()

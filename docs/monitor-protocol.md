@@ -128,8 +128,13 @@ Existing frame event:
       "vehicle_id": 1
     }
   ],
-  "encoding": "text",
-  "payload": "{}"
+  "socketio_event": "Bridge",
+  "args": [
+    {
+      "encoding": "json",
+      "payload": {}
+    }
+  ]
 }
 ```
 
@@ -180,6 +185,37 @@ Monitor WebSocket command surface:
 ```
 
 The frontend sends `configure-devkits` when it connects to RCT. RCT stores those endpoints and does not connect DevKit bridge instances from startup defaults. When the simulator connects, RCT connects only configured and enabled DevKit bridge instances. The connected/disconnected frontend buttons send `connect-devkit` and `disconnect-devkit` commands for manual control.
+
+## Bridge Proxy Cache
+
+RCT keeps two Bridge caches:
+
+- Incoming cache: latest `Bridge` payload received from the simulator.
+- Outgoing cache: latest command payload sent to the simulator.
+
+The outgoing cache starts with:
+
+```json
+{
+  "V1 Reset": "False",
+  "V1 Throttle": "0.0",
+  "V1 Steering": "0.0",
+  "V2 Reset": "False",
+  "V2 Throttle": "0.0",
+  "V2 Steering": "0.0"
+}
+```
+
+When a DevKit sends a `Bridge` event, RCT rewrites that DevKit's id `1` fields back to the assigned simulator vehicle id, merges the changed control fields into the outgoing cache, then emits the complete outgoing cache to the simulator. This ensures the simulator always receives V1 and V2 reset/throttle/steering fields together.
+
+RCT also tracks which DevKit caused each outgoing simulator `Bridge` message. The next simulator `Bridge` response is stored in the incoming cache and forwarded to that DevKit after rewriting the assigned simulator vehicle id back to DevKit id `1`. If no pending DevKit response target exists, simulator `Bridge` data is forwarded to all configured and enabled DevKit bridge instances.
+
+Each DevKit state includes a rolling 60-second completed-cycle Bridge rate:
+
+- `bridge_hz`
+- `bridge_per_minute`
+
+The rate is recorded when a simulator `Bridge` response is routed back to the DevKit that caused the outgoing simulator command.
 
 ## Non-Monitor Paths
 
