@@ -2,12 +2,12 @@
 
 ![AutoDRIVE RCT Illustrator](frontend/assets/autodrive-rct.png)
 
-AutoDRIVE Race Control Tower (RCT) is a high-performance WebSocket proxy for the AutoDRIVE RoboRacer H2H Simulator. It lets one simulator interact with two independent DevKit bridge instances without changing the existing AutoDRIVE protocol or the DevKit bridge code.
+AutoDRIVE Race Control Tower (RCT) is a Socket.IO-aware proxy for the AutoDRIVE RoboRacer H2H Simulator. It lets one simulator interact with two independent DevKit bridge instances without changing the existing AutoDRIVE bridge payload schema or the DevKit bridge code.
 
 ```mermaid
 flowchart LR
-    sim["AutoDRIVE H2H Simulator<br/>(WS client)<br/>/"]
-    rct["AutoDRIVE RCT<br/>(WS server + Vehicle id rewriting proxy)"]
+    sim["AutoDRIVE H2H Simulator<br/>(Socket.IO client)<br/>/socket.io/"]
+    rct["AutoDRIVE RCT<br/>(aiohttp + Socket.IO proxy)"]
     ui["RCT Web Frontend<br/>(monitor WS client)<br/>/monitor/WS/latest"]
     dk1["DevKit Instance 1<br/>assigned simulator id: 1<br/>expects roboracer_1 / V1"]
     dk2["DevKit Instance 2<br/>assigned simulator id: 2<br/>expects roboracer_1 / V1"]
@@ -52,7 +52,7 @@ sequenceDiagram
 ## Connection Model
 
 - RCT HTTP frontend: `http://<rct-host>:4567/`
-- AutoDRIVE Simulator client: `ws://<rct-host>:4567/` (Working as Devkit Proxy)
+- AutoDRIVE Simulator Socket.IO client: `ws://<rct-host>:4567/socket.io/?EIO=4&transport=websocket`
 - RCT monitor REST endpoint: `http://<rct-host>:4567/monitor/REST/latest`
 - RCT browser monitor client: `ws://<rct-host>:4567/monitor/WS/latest`
 - DevKit upstream 1: configured by `RCT_DEVKIT_URLS`
@@ -60,11 +60,14 @@ sequenceDiagram
 
 By default, DevKit 1 is assigned simulator vehicle id `1` and DevKit 2 is assigned simulator vehicle id `2`.
 
+When a simulator connects to RCT through Socket.IO, RCT starts connecting to the configured DevKit bridge instances as Socket.IO clients. DevKit URLs can be configured with `ws://`, `wss://`, `http://`, or `https://`; RCT normalizes `ws://` to `http://` and `wss://` to `https://` for `python-socketio` while still forcing the WebSocket transport.
+
 
 ## Requirements
 
 - Python 3.12+
-- `websockets==16.0`
+- `aiohttp`
+- `python-socketio`
 - Docker, optional
 
 ## Install
@@ -76,7 +79,22 @@ python3 -m pip install -r requirements.txt
 The host workspace does not provide `pip` or `ensurepip`, so the freeze was verified inside the Docker image. The resulting `pip freeze` output is:
 
 ```text
-websockets==16.0
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.5
+aiosignal==1.4.0
+attrs==26.1.0
+bidict==0.23.1
+frozenlist==1.8.0
+h11==0.16.0
+idna==3.11
+multidict==6.7.1
+propcache==0.4.1
+python-engineio==4.13.1
+python-socketio==5.16.1
+simple-websocket==1.1.0
+typing_extensions==4.15.0
+wsproto==1.3.2
+yarl==1.23.0
 ```
 
 ## Run Locally
@@ -91,19 +109,19 @@ Environment variables:
 
 | Name | Default | Description |
 | --- | --- | --- |
-| `RCT_HOST` | `0.0.0.0` | RCT WebSocket bind host |
-| `RCT_PORT` | `4567` | RCT WebSocket port |
-| `RCT_DEVKIT_URLS` | `ws://127.0.0.1:4568,ws://127.0.0.1:4569` | Comma-separated DevKit WebSocket URLs |
+| `RCT_HOST` | `0.0.0.0` | RCT HTTP/Socket.IO bind host |
+| `RCT_PORT` | `4567` | RCT HTTP/Socket.IO port |
+| `RCT_DEVKIT_URLS` | `ws://127.0.0.1:4568,ws://127.0.0.1:4569` | Comma-separated DevKit Socket.IO base URLs |
 | `RCT_DEVKIT_VEHICLE_IDS` | `1,2,...` | Comma-separated simulator vehicle ids assigned to each DevKit URL |
 | `RCT_RECONNECT_DELAY_SECONDS` | `3.0` | Delay before reconnecting to a DevKit endpoint |
-| `RCT_MAX_MESSAGE_SIZE` | `16777216` | Maximum WebSocket message size. Use `0` or less for no limit |
+| `RCT_MAX_MESSAGE_SIZE` | `16777216` | Maximum HTTP/WebSocket message size. Use `0` or less for no limit |
 | `RCT_CLIENT_QUEUE_SIZE` | `256` | Outbound queue size per DevKit connection |
-| `RCT_PING_INTERVAL_SECONDS` | `20` | WebSocket ping interval |
-| `RCT_PING_TIMEOUT_SECONDS` | `20` | WebSocket ping timeout |
+| `RCT_PING_INTERVAL_SECONDS` | `20` | Socket.IO ping interval |
+| `RCT_PING_TIMEOUT_SECONDS` | `20` | Socket.IO ping timeout |
 
 ## Frontend
 
-Run RCT, then open `http://localhost:4567/` in a browser. RCT serves `frontend/index.html` and static assets from the bundled `frontend` directory. The page uses Bootstrap and logs only the RCT WebSocket connection state to the browser console.
+Run RCT, then open `http://localhost:4567/` in a browser. RCT serves `frontend/index.html` and static assets from the bundled `frontend` directory. The page uses Bootstrap and connects to the monitor WebSocket endpoint for RCT connection state.
 
 ## Monitor Protocol
 
@@ -140,11 +158,12 @@ The bundled `./run.sh` script builds `autodrive-rct:dev` from the current worksp
 
 ## Frontend Command Format
 
-The bundled frontend does not send commands by default. For manual testing, the browser console can send JSON commands:
+The bundled frontend does not send commands by default. For manual testing, the browser monitor socket can send JSON commands:
 
 ```javascript
 socket.send(JSON.stringify({
   target: "devkit:2",
+  event: "message",
   payload: { "V2 Position": "1.0 2.0 0.0" }
 }));
 ```
@@ -156,7 +175,7 @@ Supported targets:
 - `devkit:1`
 - `devkit:2`
 
-When targeting DevKit connections, RCT applies the same simulator-to-DevKit id rewrite before sending the payload upstream.
+When targeting DevKit connections, RCT applies the same simulator-to-DevKit id rewrite before sending the payload upstream as a Socket.IO event.
 
 ## Protocol Notes
 
@@ -165,9 +184,9 @@ RCT handles both common AutoDRIVE id forms:
 - ROS-style strings containing `roboracer_<id>`, such as `/autodrive/roboracer_2/ips`
 - DevKit bridge dictionary fields using `V<id> ` prefixes, such as `V2 LIDAR Range Array`
 
-Binary frames are forwarded without id rewriting. Use text or JSON frames when id rewriting is required.
+Binary payload values are forwarded without id rewriting. Use text, dict, or list payloads when id rewriting is required.
 
-The referenced AutoDRIVE RoboRacer DevKit bridge currently uses Socket.IO in its public example. This project uses native WebSocket via the `websockets` package as requested. If a DevKit instance exposes only Socket.IO, place a Socket.IO-to-native-WebSocket adapter in front of it or update the DevKit bridge transport while preserving the AutoDRIVE payload schema.
+The AutoDRIVE simulator and public RoboRacer DevKit bridge use Socket.IO over WebSocket transport. RCT uses `aiohttp` for HTTP/static/monitor routes and `python-socketio` for simulator and DevKit bridge sessions.
 
 ## License
 

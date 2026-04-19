@@ -48,6 +48,49 @@ def rewrite_devkit_to_simulator(message: str | bytes, vehicle_id: int) -> str | 
     return message if rewritten is None else rewritten
 
 
+def rewrite_simulator_payload_to_devkit(payload: Any, vehicle_id: int) -> Any:
+    return rewrite_payload_vehicle_id(
+        payload,
+        source_id=vehicle_id,
+        target_id=1,
+        drop_other_vehicle_data=True,
+    )
+
+
+def rewrite_devkit_payload_to_simulator(payload: Any, vehicle_id: int) -> Any:
+    rewritten = rewrite_payload_vehicle_id(
+        payload,
+        source_id=1,
+        target_id=vehicle_id,
+        drop_other_vehicle_data=False,
+    )
+    return payload if rewritten is DROP_VALUE else rewritten
+
+
+def rewrite_payload_vehicle_id(
+    payload: Any,
+    source_id: int,
+    target_id: int,
+    drop_other_vehicle_data: bool,
+) -> Any:
+    if isinstance(payload, (str, bytes)):
+        rewritten = rewrite_message_vehicle_id(
+            payload,
+            source_id=source_id,
+            target_id=target_id,
+            drop_other_vehicle_data=drop_other_vehicle_data,
+        )
+        return DROP_VALUE if rewritten is None else rewritten
+
+    rewritten = _rewrite_json_value(
+        payload,
+        source_id=source_id,
+        target_id=target_id,
+        drop_other_vehicle_data=drop_other_vehicle_data,
+    )
+    return rewritten
+
+
 def rewrite_message_vehicle_id(
     message: str | bytes,
     source_id: int,

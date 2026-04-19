@@ -4,30 +4,35 @@ from __future__ import annotations
 
 import asyncio
 
-from websockets.asyncio.server import ServerConnection
-from websockets.exceptions import ConnectionClosed
+from aiohttp import web
 
 
-async def safe_send(connection: ServerConnection, message: str | bytes) -> bool:
+async def safe_send(connection: web.WebSocketResponse, message: str | bytes) -> bool:
+    if connection.closed:
+        return False
+
     try:
-        await connection.send(message)
+        if isinstance(message, bytes):
+            await connection.send_bytes(message)
+        else:
+            await connection.send_str(message)
         return True
-    except ConnectionClosed:
+    except (ConnectionResetError, RuntimeError):
         return False
 
 
 class MonitorEventHub:
     def __init__(self) -> None:
-        self.clients: set[ServerConnection] = set()
+        self.clients: set[web.WebSocketResponse] = set()
 
     @property
     def client_count(self) -> int:
         return len(self.clients)
 
-    def add(self, connection: ServerConnection) -> None:
+    def add(self, connection: web.WebSocketResponse) -> None:
         self.clients.add(connection)
 
-    def discard(self, connection: ServerConnection) -> None:
+    def discard(self, connection: web.WebSocketResponse) -> None:
         self.clients.discard(connection)
 
     async def broadcast(self, message: str) -> None:
