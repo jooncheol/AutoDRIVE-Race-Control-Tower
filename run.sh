@@ -30,8 +30,17 @@ if [[ -t 0 && -t 1 ]]; then
   docker_flags+=(-it)
 fi
 
+debug_env_flags=()
+if [[ -n "${RCT_DEBUG_ENGINEIO_MESSAGES+x}" ]]; then
+  debug_env_flags+=(-e "RCT_DEBUG_ENGINEIO_MESSAGES=${RCT_DEBUG_ENGINEIO_MESSAGES}")
+fi
+if [[ -n "${RCT_DEBUG_ENGINEIO_MAX_CHARS+x}" ]]; then
+  debug_env_flags+=(-e "RCT_DEBUG_ENGINEIO_MAX_CHARS=${RCT_DEBUG_ENGINEIO_MAX_CHARS}")
+fi
+
 docker run "${docker_flags[@]}" \
   -e "RCT_PORT=${RCT_PORT}" \
   -e "RCT_DEVKIT_URLS=${RCT_DEVKIT_URLS}" \
   -e "RCT_DEVKIT_VEHICLE_IDS=${RCT_DEVKIT_VEHICLE_IDS}" \
+  "${debug_env_flags[@]}" \
   "${IMAGE_NAME}"

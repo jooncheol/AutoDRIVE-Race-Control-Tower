@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import logging
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import socketio
+from socketio import packet as socketio_packet
 from aiohttp import WSMsgType, web
 
 from .config import Settings, load_settings
@@ -83,6 +85,17 @@ def encode_socketio_arg(value: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         return {"encoding": "text", "payload": str(value)}
     return {"encoding": "json", "payload": value}
+
+
+def preview_debug_value(value: Any, max_chars: int) -> str:
+    if isinstance(value, bytes):
+        preview = f"<bytes len={len(value)}>"
+    else:
+        preview = str(value)
+
+    if max_chars > 0 and len(preview) > max_chars:
+        return f"{preview[:max_chars]}... <truncated {len(preview) - max_chars} chars>"
+    return preview
 
 
 def decode_monitor_arg(value: Any, encoding: str = "json") -> Any:
@@ -249,6 +262,7 @@ class RaceControlTower:
             for devkit in self.devkits
         )
         self._register_socketio_handlers()
+        self._register_engineio_compat_handlers()
 
     @property
     def has_simulators(self) -> bool:
@@ -268,7 +282,10 @@ class RaceControlTower:
             await runner.cleanup()
 
     def create_app(self) -> web.Application:
-        app = web.Application(client_max_size=self.settings.max_message_size or 1024**3)
+        app = web.Application(
+            client_max_size=self.settings.max_message_size or 1024**3,
+            middlewares=[self.log_socketio_request],
+        )
         self.sio.attach(app, socketio_path=SOCKETIO_PATH)
         app.router.add_get("/monitor/WS/{version}", self.handle_monitor_ws)
         app.router.add_get("/monitor/REST/{version}", self.handle_monitor_rest)
@@ -279,6 +296,23 @@ class RaceControlTower:
         app.router.add_route("*", "/monitor/{tail:.*}", self.handle_unknown_monitor_path)
         app.router.add_get("/{tail:.*}", self.handle_static)
         return app
+
+    @web.middleware
+    async def log_socketio_request(
+        self,
+        request: web.Request,
+        handler: web.RequestHandler,
+    ) -> web.StreamResponse:
+        if request.path.rstrip("/") == f"/{SOCKETIO_PATH}":
+            LOGGER.info(
+                "socket.io request remote=%s method=%s path=%s query=%s upgrade=%s",
+                request.remote or "unknown",
+                request.method,
+                request.path,
+                request.query_string,
+                request.headers.get("Upgrade", ""),
+            )
+        return await handler(request)
 
     def _register_socketio_handlers(self) -> None:
         async def connect(sid: str, environ: dict[str, Any], auth: Any = None) -> bool:
@@ -307,6 +341,48 @@ class RaceControlTower:
         self.sio.on("disconnect", disconnect)
         self.sio.on("message", message)
         self.sio.on("*", any_event)
+
+    def _register_engineio_compat_handlers(self) -> None:
+        original_message_handler = self.sio.eio.handlers["message"]
+
+        async def compat_message(eio_sid: str, data: Any) -> Any:
+            if self.settings.debug_engineio_messages:
+                LOGGER.info(
+                    "engine.io message sid=%s data=%s",
+                    eio_sid,
+                    preview_debug_value(data, self.settings.debug_engineio_max_chars),
+                )
+
+            await self._ensure_socketio_namespace_for_event(eio_sid, data)
+            result = original_message_handler(eio_sid, data)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+
+        self.sio.eio.handlers["message"] = compat_message
+
+    async def _ensure_socketio_namespace_for_event(self, eio_sid: str, data: Any) -> None:
+        try:
+            packet = self.sio.packet_class(encoded_packet=data)
+        except (TypeError, ValueError):
+            return
+
+        if packet.packet_type != socketio_packet.EVENT:
+            return
+
+        namespace = packet.namespace or "/"
+        sid = self.sio.manager.sid_from_eio_sid(eio_sid, namespace)
+        if self.sio.manager.is_connected(sid, namespace):
+            return
+
+        event = packet.data[0] if isinstance(packet.data, list) and packet.data else "unknown"
+        LOGGER.info(
+            "implicit Socket.IO connect for event-before-connect eio_sid=%s namespace=%s event=%s",
+            eio_sid,
+            namespace,
+            event,
+        )
+        await self.sio._handle_connect(eio_sid, namespace, None)
 
     async def handle_static(self, request: web.Request) -> web.Response:
         static_response = build_static_file_response(request.rel_url.raw_path, FRONTEND_ROOT)

@@ -26,6 +26,13 @@ def _get_float(name: str, default: float) -> float:
         raise ValueError(f"{name} must be a number, got {raw_value!r}") from exc
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     host: str
@@ -37,6 +44,8 @@ class Settings:
     client_queue_size: int
     ping_interval_seconds: int
     ping_timeout_seconds: int
+    debug_engineio_messages: bool
+    debug_engineio_max_chars: int
 
 
 def load_settings() -> Settings:
@@ -71,4 +80,6 @@ def load_settings() -> Settings:
         client_queue_size=_get_int("RCT_CLIENT_QUEUE_SIZE", 256),
         ping_interval_seconds=_get_int("RCT_PING_INTERVAL_SECONDS", 20),
         ping_timeout_seconds=_get_int("RCT_PING_TIMEOUT_SECONDS", 20),
+        debug_engineio_messages=_get_bool("RCT_DEBUG_ENGINEIO_MESSAGES", False),
+        debug_engineio_max_chars=_get_int("RCT_DEBUG_ENGINEIO_MAX_CHARS", 2000),
     )
