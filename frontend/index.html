@@ -11,6 +11,7 @@
     <meta name="author" content="Mark Otto, Jacob Thornton, and Bootstrap contributors">
     <meta name="generator" content="Astro v5.13.2">
     <title>Album example · Bootstrap v5.3</title>
+    <link rel="icon" href="assets/favicon.png" type="image/png">
     <script src="vendor/jquery/jquery-4.0.0.min.js" integrity="sha256-OaVG6prZf4v69dPg6PhVattBXkcOWQB62pdZ3ORyrao="></script>
     <link href="vendor/bootstrap/bootstrap-5.3.8.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB">
     <meta name="theme-color" content="#712cf9">
@@ -129,6 +130,43 @@
       #right-sidebar {
         min-height: 0;
       }
+
+      .status-indicator {
+        align-items: center;
+        display: inline-flex;
+        gap: 0.5rem;
+      }
+
+      .status-dot {
+        border-radius: 50%;
+        display: inline-block;
+        height: 0.75rem;
+        width: 0.75rem;
+      }
+
+      .status-dot-offline {
+        background-color: #dc3545;
+      }
+
+      .status-dot-connecting {
+        background-color: #ffc107;
+      }
+
+      .status-dot-online {
+        background-color: #198754;
+      }
+
+      .rct-sidebar {
+        background-color: #ced4da;
+      }
+
+      .rct-footer {
+        background-color: #adb5bd;
+      }
+
+      .rct-stat-list {
+        font-size: 0.875rem;
+      }
     </style>
   </head>
   <body class="d-flex flex-column">
@@ -176,28 +214,132 @@
     <main class="flex-grow-1 d-flex">
       <div class="container-fluid rct-shell flex-grow-1 d-flex">
         <div class="row rct-shell-row flex-grow-1 w-100">
-          <div id="left-sidebar" class="col-sm-2 text-center h-100" style="background-color: #f8f9fa;">
-            left
+          <div id="left-sidebar" class="col-sm-2 text-center h-100 rct-sidebar">
+            <h2 class="h6 mt-3">Roboracer 1</h2>
+            <div class="px-2 text-start">
+              <label for="roboracer1Ip" class="form-label small mb-1">Hostname (IP)</label>
+              <input id="roboracer1Ip" class="form-control form-control-sm mb-2" type="text">
+              <label for="roboracer1Port" class="form-label small mb-1">Port Number</label>
+              <input id="roboracer1Port" class="form-control form-control-sm mb-3" type="number">
+              <button id="roboracer1Status" class="btn btn-sm btn-outline-secondary w-100" type="button">Disconnected</button>
+              <dl class="rct-stat-list mt-3 mb-0">
+                <div class="d-flex justify-content-between">
+                  <dt>Lap count:</dt>
+                  <dd id="roboracer1LapCount" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Collisions:</dt>
+                  <dd id="roboracer1Collisions" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>This Lap:</dt>
+                  <dd id="roboracer1ThisLap" class="mb-1">00:00</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Last Lap:</dt>
+                  <dd id="roboracer1LastLap" class="mb-1">00:00</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Best Lap:</dt>
+                  <dd id="roboracer1BestLap" class="mb-0">00:00</dd>
+                </div>
+              </dl>
+            </div>
           </div>
           <div id="main-content" class="col-sm-8 h-100" style="background-color: #000000;">
           </div>
-          <div id="right-sidebar" class="col-sm-2 text-center h-100" style="background-color: #f8f9fa;">
-            right
+          <div id="right-sidebar" class="col-sm-2 text-center h-100 rct-sidebar">
+            <h2 class="h6 mt-3">Roboracer 2</h2>
+            <div class="px-2 text-start">
+              <label for="roboracer2Ip" class="form-label small mb-1">Hostname (IP)</label>
+              <input id="roboracer2Ip" class="form-control form-control-sm mb-2" type="text">
+              <label for="roboracer2Port" class="form-label small mb-1">Port Number</label>
+              <input id="roboracer2Port" class="form-control form-control-sm mb-3" type="number">
+              <button id="roboracer2Status" class="btn btn-sm btn-outline-secondary w-100" type="button">Disconnected</button>
+              <dl class="rct-stat-list mt-3 mb-0">
+                <div class="d-flex justify-content-between">
+                  <dt>Lap count:</dt>
+                  <dd id="roboracer2LapCount" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Collisions:</dt>
+                  <dd id="roboracer2Collisions" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>This Lap:</dt>
+                  <dd id="roboracer2ThisLap" class="mb-1">00:00</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Last Lap:</dt>
+                  <dd id="roboracer2LastLap" class="mb-1">00:00</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Best Lap:</dt>
+                  <dd id="roboracer2BestLap" class="mb-0">00:00</dd>
+                </div>
+              </dl>
+            </div>
           </div>
         </div>
       </div>
     </main>
-    <footer class="text-body-secondary py-2">
-      <div class="container">
-        <p class="mb-0">&copy; 2017–2024 Company Name</p>
+    <footer class="text-body-secondary py-2 border-top rct-footer">
+      <div class="container-fluid d-flex justify-content-between align-items-center">
+        <div class="status-indicator">
+          <span id="simulatorStatusDot" class="status-dot status-dot-offline" aria-hidden="true"></span>
+          <span>AutoDRIVE Simulator</span>
+          <strong id="simulatorStatusText">Unknown</strong>
+        </div>
+        <div class="status-indicator">
+          <span>RCT</span>
+          <strong id="rctStatusText">Connecting</strong>
+          <span id="rctStatusDot" class="status-dot status-dot-connecting" aria-hidden="true"></span>
+        </div>
       </div>
     </footer>
     <script src="vendor/bootstrap/bootstrap-5.3.8.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"></script>
-  </body>
+    <script>
+      let rctSocket = null;
+      const rctStatusDot = document.getElementById("rctStatusDot");
+      const rctStatusText = document.getElementById("rctStatusText");
 
-<script>
-$(document).ready(function() {
-    console.log("Hello, world!");
-});
-</script>
+      function frontendWebSocketUrl() {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = window.location.host || "localhost:4567";
+        return `${protocol}//${host}/frontend`;
+      }
+
+      function setRctStatus(status) {
+        const labels = {
+          connecting: "Connecting",
+          online: "Connected",
+          offline: "Disconnected",
+        };
+        rctStatusText.textContent = labels[status];
+        rctStatusDot.className = `status-dot status-dot-${status}`;
+      }
+
+      function connectRctStatus() {
+        setRctStatus("connecting");
+        rctSocket = new WebSocket(frontendWebSocketUrl());
+        rctSocket.addEventListener("open", () => {
+          setRctStatus("online");
+          console.log("RCT frontend WebSocket connected");
+        });
+        rctSocket.addEventListener("close", (event) => {
+          setRctStatus("offline");
+          console.log("RCT frontend WebSocket disconnected:", event.code, event.reason);
+        });
+        rctSocket.addEventListener("error", (event) => {
+          setRctStatus("offline");
+          console.log("RCT frontend WebSocket error:", event);
+        });
+        rctSocket.addEventListener("message", (event) => {
+          console.log("RCT frontend WebSocket message:", event.data);
+        });
+      }
+
+      connectRctStatus();
+    </script>
+  </body>
 </html>
