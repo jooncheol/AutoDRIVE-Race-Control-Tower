@@ -41,6 +41,10 @@ LOGGER = logging.getLogger("rct")
 FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 SOCKETIO_PATH = "socket.io"
 BRIDGE_OMITTED_KEY_PARTS = ("lidar", "camera", "array", "image")
+ANSI_RED = "\033[31m"
+ANSI_BLUE = "\033[34m"
+ANSI_GRAY = "\033[90m"
+ANSI_RESET = "\033[0m"
 
 
 def utc_now() -> str:
@@ -153,6 +157,10 @@ def omitted_bridge_value(value: Any) -> str:
     except TypeError:
         return "<omitted>"
     return f"<omitted len={size}>"
+
+
+def color_arrow(text: str, color: str) -> str:
+    return f"{color}{text}{ANSI_RESET}"
 
 
 def decode_monitor_arg(value: Any, encoding: str = "json") -> Any:
@@ -645,6 +653,7 @@ class RaceControlTower:
                 bridge_log_payload(args, self.settings.log_bridge_max_chars),
             )
 
+        self.log_bridge_flow("sim-to-rct")
         payload = socketio_data_from_args(args)
         self.bridge_cache.update_incoming(payload)
         target_vehicle_id = self.bridge_cache.dequeue_response_target()
@@ -660,6 +669,7 @@ class RaceControlTower:
             if rewritten_args is None:
                 continue
             await devkit.enqueue("Bridge", rewritten_args)
+            self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id)
             if target_vehicle_id is not None:
                 self.record_bridge_rate(devkit)
             targets.append({"name": devkit.name, "vehicle_id": devkit.vehicle_id})
@@ -685,6 +695,7 @@ class RaceControlTower:
             return
 
         await devkit.enqueue("Bridge", rewritten_args)
+        self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id, cached=True)
         await self.broadcast_monitor(
             envelope(
                 "frame",
@@ -714,6 +725,7 @@ class RaceControlTower:
         )
 
     async def handle_devkit_bridge_event(self, devkit: DevKitConnection, args: tuple[Any, ...]) -> None:
+        self.log_bridge_flow("devkit-to-rct", devkit.vehicle_id)
         rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
         rewritten_payload = socketio_data_from_args(rewritten_args)
         outgoing_payload = self.bridge_cache.update_outgoing(rewritten_payload)
@@ -721,6 +733,7 @@ class RaceControlTower:
         self.bridge_cache.enqueue_response_target(devkit.vehicle_id)
 
         await self.emit_to_simulators("Bridge", outgoing_args)
+        self.log_bridge_flow("rct-to-sim")
         await self.broadcast_monitor(
             envelope(
                 "frame",
@@ -740,6 +753,47 @@ class RaceControlTower:
             bridge_hz=float(rates["bridge_hz"]),
             bridge_per_minute=int(rates["bridge_per_minute"]),
         )
+
+    def log_bridge_flow(
+        self,
+        action: str,
+        vehicle_id: int | None = None,
+        cached: bool = False,
+    ) -> None:
+        if not self.settings.debug_bridge_flow:
+            return
+
+        sim = "SIM"
+        rct = "RCT"
+        v1 = "V1"
+        v2 = "V2"
+        s2r = "    "
+        r2v1 = "    "
+        v12v2 = "    "
+        arrow_color = ANSI_GRAY if cached else ANSI_RED
+
+        if action == "sim-to-rct":
+            sim = f"SIM {color_arrow('->', arrow_color)} "
+            s2r = ""
+        elif action == "rct-to-devkit":
+            if vehicle_id == 1:
+                rct = f"RCT {color_arrow('->', arrow_color)} "
+                r2v1 = ""
+            elif vehicle_id == 2:
+                v1 = f"V1 {color_arrow('->', arrow_color)} "
+                v12v2 = ""
+        elif action == "devkit-to-rct":
+            blue_arrow = color_arrow("<-", ANSI_BLUE)
+            if vehicle_id == 1:
+                rct = f"RCT {blue_arrow} "
+                r2v1 = ""
+            elif vehicle_id == 2:
+                v1 = f"V1 {blue_arrow} "
+                v12v2 = ""
+        elif action == "rct-to-sim":
+            sim = f"SIM {color_arrow('<-', ANSI_BLUE)} "
+            s2r = ""
+        LOGGER.info("%s%s%s%s%s%s%s", sim, s2r, rct, r2v1, v1, v12v2, v2)
 
     async def handle_monitor_message(self, message: str) -> None:
         try:

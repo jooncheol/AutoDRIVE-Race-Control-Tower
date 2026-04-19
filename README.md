@@ -120,6 +120,7 @@ Environment variables:
 | `RCT_PING_TIMEOUT_SECONDS` | `20` | Socket.IO ping timeout |
 | `RCT_DEBUG_ENGINEIO_MESSAGES` | `false` | Log raw Engine.IO message packets for compatibility debugging |
 | `RCT_DEBUG_ENGINEIO_MAX_CHARS` | `2000` | Maximum raw Engine.IO packet preview length |
+| `RCT_DEBUG_BRIDGE_FLOW` | `false` | Log compact ANSI-colored Bridge flow timeline |
 | `RCT_LOG_BRIDGE_MESSAGES` | `false` | Pretty-print incoming simulator `Bridge` events with LIDAR/camera values omitted |
 | `RCT_LOG_BRIDGE_MAX_CHARS` | `20000` | Maximum pretty-printed `Bridge` payload length |
 
