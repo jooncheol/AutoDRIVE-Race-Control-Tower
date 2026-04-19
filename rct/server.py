@@ -178,6 +178,10 @@ def rewrite_args_for_simulator(args: tuple[Any, ...], vehicle_id: int) -> tuple[
     return tuple(rewrite_devkit_payload_to_simulator(arg, vehicle_id) for arg in args)
 
 
+def devkit_url_from_host_port(host: str, port: int) -> str:
+    return f"ws://{host}:{port}"
+
+
 @dataclass
 class DevKitConnection:
     name: str
@@ -187,6 +191,10 @@ class DevKitConnection:
     tower: "RaceControlTower"
     queue: asyncio.Queue[tuple[str, tuple[Any, ...]]] = field(init=False)
     client: socketio.AsyncClient = field(init=False)
+    host: str = ""
+    port: int | None = None
+    configured: bool = False
+    enabled: bool = True
     connected: bool = False
     _run_task: asyncio.Task[None] | None = None
     _send_task: asyncio.Task[None] | None = None
@@ -213,7 +221,6 @@ class DevKitConnection:
                 await self.tower.publish_status()
 
         async def on_message(data: Any) -> None:
-            print(data)
             await self.tower.handle_devkit_event(self, "message", (data,))
 
         async def on_any_event(event: str, *args: Any) -> None:
@@ -225,10 +232,22 @@ class DevKitConnection:
         self.client.on("*", on_any_event)
 
     def start(self) -> None:
+        if not self.configured or not self.enabled or not self.tower.has_simulators:
+            return
         if self._run_task is None or self._run_task.done():
             self._run_task = asyncio.create_task(self.run(), name=f"{self.name}:connect")
         if self._send_task is None or self._send_task.done():
             self._send_task = asyncio.create_task(self.send_loop(), name=f"{self.name}:send")
+
+    async def configure(self, host: str, port: int) -> None:
+        url = devkit_url_from_host_port(host, port)
+        if self.url != url:
+            await self.stop()
+        self.host = host
+        self.port = port
+        self.url = url
+        self.configured = True
+        self.tower.set_devkit_endpoint(self)
 
     async def stop(self) -> None:
         tasks = [task for task in (self._run_task, self._send_task) if task is not None]
@@ -257,7 +276,7 @@ class DevKitConnection:
         self.tower.update_devkit_queue(self)
 
     async def run(self) -> None:
-        while self.tower.has_simulators:
+        while self.tower.has_simulators and self.configured and self.enabled:
             if not self.client.connected:
                 try:
                     await self.client.connect(
@@ -314,7 +333,15 @@ class RaceControlTower:
             )
         ]
         self.state.configure_devkits(
-            DevKitMonitorState(devkit.name, devkit.vehicle_id, devkit.url)
+            DevKitMonitorState(
+                devkit.name,
+                devkit.vehicle_id,
+                devkit.url,
+                devkit.host,
+                devkit.port,
+                devkit.configured,
+                devkit.enabled,
+            )
             for devkit in self.devkits
         )
         self._register_socketio_handlers()
@@ -492,9 +519,9 @@ class RaceControlTower:
 
         action = request.match_info["action"]
         if action == "connect":
-            devkit.start()
+            await self.connect_devkit(devkit)
         elif action == "disconnect":
-            await devkit.stop()
+            await self.disconnect_devkit(devkit)
         else:
             return web.json_response({"error": f"unsupported devkit action {action!r}"}, status=404)
 
@@ -538,6 +565,47 @@ class RaceControlTower:
 
     async def disconnect_all_devkits(self) -> None:
         await asyncio.gather(*(devkit.stop() for devkit in self.devkits), return_exceptions=True)
+
+    async def configure_devkit(
+        self,
+        devkit: DevKitConnection,
+        host: str,
+        port: int,
+        enabled: bool,
+    ) -> None:
+        await devkit.configure(host, port)
+        devkit.enabled = enabled
+        self.state.set_devkit_enabled(devkit.name, enabled)
+        if enabled:
+            devkit.start()
+
+    async def connect_devkit(
+        self,
+        devkit: DevKitConnection,
+        host: str | None = None,
+        port: int | None = None,
+    ) -> None:
+        if host is not None and port is not None:
+            await devkit.configure(host, port)
+        devkit.enabled = True
+        self.state.set_devkit_enabled(devkit.name, True)
+        devkit.start()
+
+    async def disconnect_devkit(self, devkit: DevKitConnection) -> None:
+        devkit.enabled = False
+        self.state.set_devkit_enabled(devkit.name, False)
+        await devkit.stop()
+
+    def set_devkit_endpoint(self, devkit: DevKitConnection) -> None:
+        if devkit.port is None:
+            return
+        self.state.set_devkit_endpoint(
+            devkit.name,
+            devkit.url,
+            devkit.host,
+            devkit.port,
+            devkit.configured,
+        )
 
     async def handle_simulator_event(self, sid: str, event: str, args: tuple[Any, ...]) -> None:
         if sid not in self.simulator_sids:
@@ -591,6 +659,9 @@ class RaceControlTower:
             )
             return
 
+        if await self.handle_monitor_command(command):
+            return
+
         target = command.get("target", "simulator")
         event = command.get("event", "message")
         if not isinstance(event, str) or not event:
@@ -629,6 +700,77 @@ class RaceControlTower:
             return
 
         await self.broadcast_monitor(envelope("command", source="monitor", target=target, socketio_event=event))
+
+    async def handle_monitor_command(self, command: dict[str, Any]) -> bool:
+        command_name = command.get("command")
+        if command_name is None:
+            return False
+
+        try:
+            if command_name == "configure-devkits":
+                devkit_configs = command.get("devkits", [])
+                if not isinstance(devkit_configs, list):
+                    raise ValueError("configure-devkits command requires a devkits list")
+                for devkit_config in devkit_configs:
+                    devkit, host, port = self._devkit_endpoint_from_payload(devkit_config)
+                    await self.configure_devkit(devkit, host, port, enabled=True)
+            elif command_name == "connect-devkit":
+                devkit, host, port = self._devkit_endpoint_from_payload(command, require_endpoint=False)
+                await self.connect_devkit(devkit, host, port)
+            elif command_name == "disconnect-devkit":
+                devkit = self._devkit_from_payload(command)
+                await self.disconnect_devkit(devkit)
+            else:
+                raise ValueError(f"unsupported monitor command {command_name!r}")
+        except ValueError as exc:
+            await self.broadcast_monitor(envelope("error", source="monitor", message=str(exc)))
+            return True
+
+        await self.publish_status()
+        await self.broadcast_monitor(envelope("command", source="monitor", command=command_name))
+        return True
+
+    def _devkit_endpoint_from_payload(
+        self,
+        payload: Any,
+        require_endpoint: bool = True,
+    ) -> tuple[DevKitConnection, str | None, int | None]:
+        if not isinstance(payload, dict):
+            raise ValueError("devkit command payload must be an object")
+
+        devkit = self._devkit_from_payload(payload)
+        host = payload.get("host", payload.get("hostname"))
+        port = payload.get("port")
+        if host is None or port is None:
+            if require_endpoint:
+                raise ValueError("devkit command requires host and port")
+            return devkit, None, None
+
+        if not isinstance(host, str) or not host.strip():
+            raise ValueError("devkit host must be a non-empty string")
+
+        try:
+            port_number = int(port)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("devkit port must be an integer") from exc
+
+        if port_number < 1 or port_number > 65535:
+            raise ValueError("devkit port must be between 1 and 65535")
+
+        return devkit, host.strip(), port_number
+
+    def _devkit_from_payload(self, payload: dict[str, Any]) -> DevKitConnection:
+        try:
+            vehicle_id = int(payload["vehicle_id"])
+        except KeyError as exc:
+            raise ValueError("devkit command requires vehicle_id") from exc
+        except (TypeError, ValueError) as exc:
+            raise ValueError("devkit vehicle_id must be an integer") from exc
+
+        devkit = self._get_devkit_by_vehicle_id(vehicle_id)
+        if devkit is None:
+            raise ValueError(f"unknown vehicle_id {vehicle_id}")
+        return devkit
 
     def _command_args(self, command: dict[str, Any]) -> tuple[Any, ...]:
         if "args" in command:

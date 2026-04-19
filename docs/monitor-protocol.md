@@ -143,6 +143,44 @@ Planned live monitor event categories:
 - `frame`: raw or encoded bridge protocol observation event
 - `error`: monitor protocol or command error
 
+Monitor WebSocket command surface:
+
+```json
+{
+  "command": "configure-devkits",
+  "devkits": [
+    {
+      "vehicle_id": 1,
+      "host": "127.0.0.1",
+      "port": 4568
+    },
+    {
+      "vehicle_id": 2,
+      "host": "127.0.0.1",
+      "port": 4569
+    }
+  ]
+}
+```
+
+```json
+{
+  "command": "connect-devkit",
+  "vehicle_id": 1,
+  "host": "127.0.0.1",
+  "port": 4568
+}
+```
+
+```json
+{
+  "command": "disconnect-devkit",
+  "vehicle_id": 1
+}
+```
+
+The frontend sends `configure-devkits` when it connects to RCT. RCT stores those endpoints and does not connect DevKit bridge instances from startup defaults. When the simulator connects, RCT connects only configured and enabled DevKit bridge instances. The connected/disconnected frontend buttons send `connect-devkit` and `disconnect-devkit` commands for manual control.
+
 ## Non-Monitor Paths
 
 Simulator Socket.IO endpoint:

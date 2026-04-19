@@ -30,10 +30,29 @@ class RaceControlStateTests(unittest.TestCase):
                 "name": "devkit:1",
                 "vehicle_id": 1,
                 "url": "ws://127.0.0.1:4568",
+                "host": "",
+                "port": None,
+                "configured": False,
+                "enabled": True,
                 "connected": True,
                 "queued_messages": 3,
             },
         )
+
+    def test_snapshot_tracks_devkit_endpoint_and_enabled_state(self):
+        state = RaceControlState()
+        state.configure_devkits([DevKitMonitorState("devkit:1", 1, "")])
+
+        state.set_devkit_endpoint("devkit:1", "ws://10.0.2.2:4568", "10.0.2.2", 4568, True)
+        state.set_devkit_enabled("devkit:1", False)
+
+        snapshot = state.snapshot()
+
+        self.assertEqual(snapshot["devkits"][0]["url"], "ws://10.0.2.2:4568")
+        self.assertEqual(snapshot["devkits"][0]["host"], "10.0.2.2")
+        self.assertEqual(snapshot["devkits"][0]["port"], 4568)
+        self.assertTrue(snapshot["devkits"][0]["configured"])
+        self.assertFalse(snapshot["devkits"][0]["enabled"])
 
     def test_revision_changes_only_when_values_change(self):
         state = RaceControlState()

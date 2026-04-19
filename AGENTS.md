@@ -6,10 +6,11 @@ This repository contains AutoDRIVE Race Control Tower (RCT), a Socket.IO-aware p
 
 - Keep the runtime on Python 3.12 with `aiohttp` and `python-socketio`.
 - RCT accepts simulator Socket.IO clients on `/socket.io/` and browser monitor clients on `/monitor/WS/latest` or `/monitor/WS/0.1`.
-- RCT connects upstream to DevKit bridge instances listed in `RCT_DEVKIT_URLS`.
+- RCT creates DevKit bridge slots from `RCT_DEVKIT_URLS`, but the active host/port endpoint comes from the browser frontend through monitor commands.
 - RCT connects upstream as a Socket.IO client and forces the WebSocket transport.
 - `RCT_DEVKIT_URLS` may use `ws://`, `wss://`, `http://`, or `https://`; normalize `ws://` to `http://` and `wss://` to `https://` before calling `python-socketio`.
 - Each DevKit URL receives one simulator vehicle id from `RCT_DEVKIT_VEHICLE_IDS`.
+- Do not auto-connect DevKit bridge slots from startup defaults. Connect configured/enabled DevKit slots when the simulator connects, and allow monitor commands to connect/disconnect them manually.
 - Simulator-to-DevKit messages must be rewritten from the assigned simulator id to id `1`.
 - DevKit-to-Simulator messages must be rewritten from id `1` back to the assigned simulator id.
 - Preserve original payload shape whenever possible. Only rewrite vehicle identifiers.

@@ -12,6 +12,10 @@ class DevKitMonitorState:
     name: str
     vehicle_id: int
     url: str
+    host: str = ""
+    port: int | None = None
+    configured: bool = False
+    enabled: bool = True
     connected: bool = False
     queued_messages: int = 0
 
@@ -48,6 +52,36 @@ class RaceControlState:
             if self._devkits[name].connected == connected:
                 return
             self._devkits[name].connected = connected
+            self._revision += 1
+
+    def set_devkit_endpoint(
+        self,
+        name: str,
+        url: str,
+        host: str,
+        port: int,
+        configured: bool,
+    ) -> None:
+        with self._lock:
+            devkit = self._devkits[name]
+            if (
+                devkit.url == url
+                and devkit.host == host
+                and devkit.port == port
+                and devkit.configured == configured
+            ):
+                return
+            devkit.url = url
+            devkit.host = host
+            devkit.port = port
+            devkit.configured = configured
+            self._revision += 1
+
+    def set_devkit_enabled(self, name: str, enabled: bool) -> None:
+        with self._lock:
+            if self._devkits[name].enabled == enabled:
+                return
+            self._devkits[name].enabled = enabled
             self._revision += 1
 
     def set_devkit_queue_size(self, name: str, queued_messages: int) -> None:

@@ -328,6 +328,18 @@
       const rctStatusText = document.getElementById("rctStatusText");
       const simulatorStatusDot = document.getElementById("simulatorStatusDot");
       const simulatorStatusText = document.getElementById("simulatorStatusText");
+      const roboracers = {
+        1: {
+          hostInput: document.getElementById("roboracer1Ip"),
+          portInput: document.getElementById("roboracer1Port"),
+          statusButton: document.getElementById("roboracer1Status"),
+        },
+        2: {
+          hostInput: document.getElementById("roboracer2Ip"),
+          portInput: document.getElementById("roboracer2Port"),
+          statusButton: document.getElementById("roboracer2Status"),
+        },
+      };
       const mainCanvas = document.getElementById("mainCanvas");
       const mainContext = mainCanvas.getContext("2d");
       const mainImage = new Image();
@@ -356,6 +368,84 @@
         drawMainCanvas();
       }
 
+      function setRoboracerStatus(vehicleId, connected) {
+        const roboracer = roboracers[vehicleId];
+        if (!roboracer) {
+          return;
+        }
+
+        roboracer.statusButton.dataset.connected = connected ? "true" : "false";
+        roboracer.statusButton.textContent = connected ? "Connected" : "Disconnected";
+        roboracer.statusButton.className = connected
+          ? "btn btn-sm btn-success w-100"
+          : "btn btn-sm btn-outline-secondary w-100";
+      }
+
+      function setAllRoboracerStatus(connected) {
+        Object.keys(roboracers).forEach((vehicleId) => {
+          setRoboracerStatus(Number(vehicleId), connected);
+        });
+      }
+
+      function roboracerConfig(vehicleId) {
+        const roboracer = roboracers[vehicleId];
+        return {
+          vehicle_id: vehicleId,
+          host: roboracer.hostInput.value.trim(),
+          port: Number(roboracer.portInput.value),
+        };
+      }
+
+      function sendMonitorCommand(command) {
+        if (!rctSocket || rctSocket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        rctSocket.send(JSON.stringify(command));
+      }
+
+      function sendRoboracerConfiguration() {
+        sendMonitorCommand({
+          command: "configure-devkits",
+          devkits: [
+            roboracerConfig(1),
+            roboracerConfig(2),
+          ],
+        });
+      }
+
+      function connectRoboracer(vehicleId) {
+        sendMonitorCommand({
+          command: "connect-devkit",
+          ...roboracerConfig(vehicleId),
+        });
+      }
+
+      function disconnectRoboracer(vehicleId) {
+        sendMonitorCommand({
+          command: "disconnect-devkit",
+          vehicle_id: vehicleId,
+        });
+      }
+
+      function toggleRoboracer(vehicleId) {
+        const roboracer = roboracers[vehicleId];
+        if (roboracer.statusButton.dataset.connected === "true") {
+          disconnectRoboracer(vehicleId);
+        } else {
+          connectRoboracer(vehicleId);
+        }
+      }
+
+      function updateRoboracerStatusFromState(devkits) {
+        if (!Array.isArray(devkits)) {
+          return;
+        }
+
+        for (const devkit of devkits) {
+          setRoboracerStatus(Number(devkit.vehicle_id), Boolean(devkit.connected));
+        }
+      }
+
       function handleMonitorMessage(data) {
         let message = null;
         try {
@@ -367,6 +457,7 @@
 
         if (message.event === "status") {
           setSimulatorStatus(Number(message.simulator_clients || 0) > 0);
+          updateRoboracerStatusFromState(message.devkits);
         }
       }
 
@@ -375,16 +466,19 @@
         rctSocket = new WebSocket(frontendWebSocketUrl());
         rctSocket.addEventListener("open", () => {
           setRctStatus("online");
+          sendRoboracerConfiguration();
           console.log("RCT frontend WebSocket connected");
         });
         rctSocket.addEventListener("close", (event) => {
           setRctStatus("offline");
           setSimulatorStatus(false);
+          setAllRoboracerStatus(false);
           console.log("RCT frontend WebSocket disconnected:", event.code, event.reason);
         });
         rctSocket.addEventListener("error", (event) => {
           setRctStatus("offline");
           setSimulatorStatus(false);
+          setAllRoboracerStatus(false);
           console.log("RCT frontend WebSocket error:", event);
         });
         rctSocket.addEventListener("message", (event) => {
@@ -392,6 +486,9 @@
           console.log("RCT frontend WebSocket message:", event.data);
         });
       }
+
+      roboracers[1].statusButton.addEventListener("click", () => toggleRoboracer(1));
+      roboracers[2].statusButton.addEventListener("click", () => toggleRoboracer(2));
 
       function roundedRect(context, x, y, width, height, radius) {
         context.beginPath();
