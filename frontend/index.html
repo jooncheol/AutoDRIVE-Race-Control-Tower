@@ -312,7 +312,7 @@
         <div class="status-indicator">
           <span id="simulatorStatusDot" class="status-dot status-dot-offline" aria-hidden="true"></span>
           <span>AutoDRIVE Simulator</span>
-          <strong id="simulatorStatusText">Unknown</strong>
+          <strong id="simulatorStatusText">Disconnected</strong>
         </div>
         <div class="status-indicator">
           <span>RCT</span>
@@ -326,6 +326,8 @@
       let rctSocket = null;
       const rctStatusDot = document.getElementById("rctStatusDot");
       const rctStatusText = document.getElementById("rctStatusText");
+      const simulatorStatusDot = document.getElementById("simulatorStatusDot");
+      const simulatorStatusText = document.getElementById("simulatorStatusText");
       const mainCanvas = document.getElementById("mainCanvas");
       const mainContext = mainCanvas.getContext("2d");
       const mainImage = new Image();
@@ -347,6 +349,27 @@
         rctStatusDot.className = `status-dot status-dot-${status}`;
       }
 
+      function setSimulatorStatus(connected) {
+        simulatorStatusText.textContent = connected ? "Connected" : "Disconnected";
+        simulatorStatusDot.className = `status-dot status-dot-${connected ? "online" : "offline"}`;
+        mainCanvasMode = connected ? "race" : "init";
+        drawMainCanvas();
+      }
+
+      function handleMonitorMessage(data) {
+        let message = null;
+        try {
+          message = JSON.parse(data);
+        } catch (error) {
+          console.warn("Ignoring non-JSON monitor message:", data);
+          return;
+        }
+
+        if (message.event === "status") {
+          setSimulatorStatus(Number(message.simulator_clients || 0) > 0);
+        }
+      }
+
       function connectRctStatus() {
         setRctStatus("connecting");
         rctSocket = new WebSocket(frontendWebSocketUrl());
@@ -356,13 +379,16 @@
         });
         rctSocket.addEventListener("close", (event) => {
           setRctStatus("offline");
+          setSimulatorStatus(false);
           console.log("RCT frontend WebSocket disconnected:", event.code, event.reason);
         });
         rctSocket.addEventListener("error", (event) => {
           setRctStatus("offline");
+          setSimulatorStatus(false);
           console.log("RCT frontend WebSocket error:", event);
         });
         rctSocket.addEventListener("message", (event) => {
+          handleMonitorMessage(event.data);
           console.log("RCT frontend WebSocket message:", event.data);
         });
       }
