@@ -17,7 +17,7 @@ import socketio
 from socketio import packet as socketio_packet
 from aiohttp import WSMsgType, web
 
-from .bridge import BridgeCache, BridgeRateTracker
+from .bridge import BridgeCache, BridgeRateTracker, extract_collision_counts
 from .config import Settings, load_settings
 from .monitor import MonitorEventHub, safe_send
 from .monitor_protocol import (
@@ -211,8 +211,8 @@ class DevKitConnection:
     def __post_init__(self) -> None:
         self.queue = asyncio.Queue(maxsize=self.settings.client_queue_size)
         self.client = socketio.AsyncClient(
-            logger=False,
-            engineio_logger=False,
+            logger=self.settings.debug_socketio_client,
+            engineio_logger=self.settings.debug_engineio_client,
             reconnection=False,
         )
         self._register_handlers()
@@ -328,11 +328,13 @@ class RaceControlTower:
         self.monitor_hub = MonitorEventHub()
         self.bridge_cache = BridgeCache(pending_limit=settings.client_queue_size)
         self.bridge_rates = BridgeRateTracker()
+        self.collision_counts: dict[int, int] = {}
+        self.bridge_lock = asyncio.Lock()
         self.sio = socketio.AsyncServer(
             async_mode="aiohttp",
             cors_allowed_origins="*",
-            logger=False,
-            engineio_logger=False,
+            logger=settings.debug_socketio_server,
+            engineio_logger=settings.debug_engineio_server,
             max_http_buffer_size=settings.max_message_size or 100_000_000,
             ping_interval=settings.ping_interval_seconds,
             ping_timeout=settings.ping_timeout_seconds,
@@ -646,6 +648,10 @@ class RaceControlTower:
         )
 
     async def handle_simulator_bridge_event(self, sid: str, args: tuple[Any, ...]) -> None:
+        async with self.bridge_lock:
+            await self._handle_simulator_bridge_event(sid, args)
+
+    async def _handle_simulator_bridge_event(self, sid: str, args: tuple[Any, ...]) -> None:
         if self.settings.log_bridge_messages:
             LOGGER.info(
                 "simulator Bridge data sid=%s\n%s",
@@ -655,15 +661,16 @@ class RaceControlTower:
 
         self.log_bridge_flow("sim-to-rct")
         payload = socketio_data_from_args(args)
+        self.log_collision_count_changes(payload)
         self.bridge_cache.update_incoming(payload)
-        target_vehicle_id = self.bridge_cache.dequeue_response_target()
+        target_vehicle_ids = self.bridge_cache.complete_inflight()
         target_devkits = (
             [
                 devkit
                 for devkit in self.devkits
-                if devkit.vehicle_id == target_vehicle_id and devkit.connected
+                if devkit.vehicle_id in target_vehicle_ids and devkit.connected
             ]
-            if target_vehicle_id is not None
+            if target_vehicle_ids is not None
             else [
                 devkit
                 for devkit in self.devkits
@@ -678,7 +685,7 @@ class RaceControlTower:
                 continue
             await devkit.enqueue("Bridge", rewritten_args)
             self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id)
-            if target_vehicle_id is not None:
+            if target_vehicle_ids is not None:
                 self.record_bridge_rate(devkit)
             targets.append({"name": devkit.name, "vehicle_id": devkit.vehicle_id})
 
@@ -687,11 +694,14 @@ class RaceControlTower:
                 "frame",
                 source="simulator",
                 socketio_event="Bridge",
-                response_vehicle_id=target_vehicle_id,
+                response_vehicle_ids=sorted(target_vehicle_ids) if target_vehicle_ids is not None else None,
                 targets=targets,
+                pending_bridge_responses=self.bridge_cache.pending_response_count,
+                queued_bridge_outgoing_count=self.bridge_cache.queued_outgoing_count,
                 args=[encode_socketio_arg(arg) for arg in args],
             )
         )
+        await self.emit_queued_bridge_outgoing_if_ready()
 
     async def send_cached_incoming_bridge(self, devkit: DevKitConnection) -> None:
         cached_payload = self.bridge_cache.current_incoming()
@@ -733,15 +743,19 @@ class RaceControlTower:
         )
 
     async def handle_devkit_bridge_event(self, devkit: DevKitConnection, args: tuple[Any, ...]) -> None:
+        async with self.bridge_lock:
+            await self._handle_devkit_bridge_event(devkit, args)
+
+    async def _handle_devkit_bridge_event(self, devkit: DevKitConnection, args: tuple[Any, ...]) -> None:
         self.log_bridge_flow("devkit-to-rct", devkit.vehicle_id)
         rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
         rewritten_payload = socketio_data_from_args(rewritten_args)
         outgoing_payload = self.bridge_cache.update_outgoing(rewritten_payload)
-        outgoing_args = (outgoing_payload,)
-        self.bridge_cache.enqueue_response_target(devkit.vehicle_id)
 
-        await self.emit_to_simulators("Bridge", outgoing_args)
-        self.log_bridge_flow("rct-to-sim")
+        if self.bridge_cache.request_outgoing(devkit.vehicle_id):
+            await self.emit_bridge_outgoing_to_simulator(devkit)
+            return
+
         await self.broadcast_monitor(
             envelope(
                 "frame",
@@ -749,7 +763,44 @@ class RaceControlTower:
                 vehicle_id=devkit.vehicle_id,
                 target="simulator",
                 socketio_event="Bridge",
+                queued_bridge_outgoing=True,
                 pending_bridge_responses=self.bridge_cache.pending_response_count,
+                queued_bridge_outgoing_count=self.bridge_cache.queued_outgoing_count,
+                args=[encode_socketio_arg(outgoing_payload)],
+            )
+        )
+
+    async def emit_queued_bridge_outgoing_if_ready(self) -> None:
+        vehicle_ids = self.bridge_cache.start_queued_outgoing()
+        if not vehicle_ids:
+            return
+        await self.emit_bridge_outgoing_to_simulator(source=None, response_vehicle_ids=vehicle_ids)
+
+    async def emit_bridge_outgoing_to_simulator(
+        self,
+        source: DevKitConnection | None,
+        response_vehicle_ids: set[int] | None = None,
+    ) -> None:
+        outgoing_payload = self.bridge_cache.current_outgoing()
+        outgoing_args = (outgoing_payload,)
+        await self.emit_to_simulators("Bridge", outgoing_args)
+        self.log_bridge_flow("rct-to-sim")
+        await self.broadcast_monitor(
+            envelope(
+                "frame",
+                source=source.name if source is not None else "rct-bridge-cache",
+                vehicle_id=source.vehicle_id if source is not None else None,
+                response_vehicle_ids=(
+                    sorted(response_vehicle_ids)
+                    if response_vehicle_ids is not None
+                    else [source.vehicle_id]
+                    if source is not None
+                    else None
+                ),
+                target="simulator",
+                socketio_event="Bridge",
+                pending_bridge_responses=self.bridge_cache.pending_response_count,
+                queued_bridge_outgoing_count=self.bridge_cache.queued_outgoing_count,
                 args=[encode_socketio_arg(arg) for arg in outgoing_args],
             )
         )
@@ -761,6 +812,16 @@ class RaceControlTower:
             bridge_hz=float(rates["bridge_hz"]),
             bridge_per_minute=int(rates["bridge_per_minute"]),
         )
+
+    def log_collision_count_changes(self, payload: Any) -> None:
+        if not self.settings.debug_bridge_flow:
+            return
+
+        for vehicle_id, count in sorted(extract_collision_counts(payload).items()):
+            previous_count = self.collision_counts.get(vehicle_id)
+            self.collision_counts[vehicle_id] = count
+            if previous_count is not None and count > previous_count:
+                LOGGER.info("%s", color_arrow(f"COLLISION DETECTED [V{vehicle_id}]", ANSI_RED))
 
     def log_bridge_flow(
         self,
