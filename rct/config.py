@@ -46,6 +46,8 @@ class Settings:
     ping_timeout_seconds: int
     debug_engineio_messages: bool
     debug_engineio_max_chars: int
+    log_bridge_messages: bool
+    log_bridge_max_chars: int
 
 
 def load_settings() -> Settings:
@@ -82,4 +84,6 @@ def load_settings() -> Settings:
         ping_timeout_seconds=_get_int("RCT_PING_TIMEOUT_SECONDS", 20),
         debug_engineio_messages=_get_bool("RCT_DEBUG_ENGINEIO_MESSAGES", False),
         debug_engineio_max_chars=_get_int("RCT_DEBUG_ENGINEIO_MAX_CHARS", 2000),
+        log_bridge_messages=_get_bool("RCT_LOG_BRIDGE_MESSAGES", False),
+        log_bridge_max_chars=_get_int("RCT_LOG_BRIDGE_MAX_CHARS", 20000),
     )

@@ -37,6 +37,12 @@ fi
 if [[ -n "${RCT_DEBUG_ENGINEIO_MAX_CHARS+x}" ]]; then
   debug_env_flags+=(-e "RCT_DEBUG_ENGINEIO_MAX_CHARS=${RCT_DEBUG_ENGINEIO_MAX_CHARS}")
 fi
+if [[ -n "${RCT_LOG_BRIDGE_MESSAGES+x}" ]]; then
+  debug_env_flags+=(-e "RCT_LOG_BRIDGE_MESSAGES=${RCT_LOG_BRIDGE_MESSAGES}")
+fi
+if [[ -n "${RCT_LOG_BRIDGE_MAX_CHARS+x}" ]]; then
+  debug_env_flags+=(-e "RCT_LOG_BRIDGE_MAX_CHARS=${RCT_LOG_BRIDGE_MAX_CHARS}")
+fi
 
 docker run "${docker_flags[@]}" \
   -e "RCT_PORT=${RCT_PORT}" \

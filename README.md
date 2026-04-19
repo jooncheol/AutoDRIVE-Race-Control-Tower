@@ -118,6 +118,10 @@ Environment variables:
 | `RCT_CLIENT_QUEUE_SIZE` | `256` | Outbound queue size per DevKit connection |
 | `RCT_PING_INTERVAL_SECONDS` | `20` | Socket.IO ping interval |
 | `RCT_PING_TIMEOUT_SECONDS` | `20` | Socket.IO ping timeout |
+| `RCT_DEBUG_ENGINEIO_MESSAGES` | `false` | Log raw Engine.IO message packets for compatibility debugging |
+| `RCT_DEBUG_ENGINEIO_MAX_CHARS` | `2000` | Maximum raw Engine.IO packet preview length |
+| `RCT_LOG_BRIDGE_MESSAGES` | `false` | Pretty-print incoming simulator `Bridge` events with LIDAR/camera values omitted |
+| `RCT_LOG_BRIDGE_MAX_CHARS` | `20000` | Maximum pretty-printed `Bridge` payload length |
 
 ## Frontend
 

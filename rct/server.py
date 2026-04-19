@@ -39,6 +39,7 @@ from .static_files import build_static_file_response
 LOGGER = logging.getLogger("rct")
 FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 SOCKETIO_PATH = "socket.io"
+BRIDGE_OMITTED_KEY_PARTS = ("array", "image")
 
 
 def utc_now() -> str:
@@ -96,6 +97,61 @@ def preview_debug_value(value: Any, max_chars: int) -> str:
     if max_chars > 0 and len(preview) > max_chars:
         return f"{preview[:max_chars]}... <truncated {len(preview) - max_chars} chars>"
     return preview
+
+
+def bridge_log_payload(args: tuple[Any, ...], max_chars: int) -> str:
+    payload: Any
+    if len(args) == 1:
+        payload = args[0]
+    else:
+        payload = list(args)
+
+    redacted = redact_bridge_payload(payload)
+    try:
+        preview = json.dumps(redacted, ensure_ascii=False, indent=2, default=repr)
+    except (TypeError, ValueError):
+        preview = repr(redacted)
+
+    if max_chars > 0 and len(preview) > max_chars:
+        return f"{preview[:max_chars]}\n... <truncated {len(preview) - max_chars} chars>"
+    return preview
+
+
+def redact_bridge_payload(value: Any, parent_key: str = "") -> Any:
+    if should_omit_bridge_value(parent_key):
+        return omitted_bridge_value(value)
+
+    if isinstance(value, dict):
+        redacted: dict[Any, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            redacted[key] = (
+                omitted_bridge_value(item)
+                if should_omit_bridge_value(key_text)
+                else redact_bridge_payload(item, key_text)
+            )
+        return redacted
+
+    if isinstance(value, list):
+        return [redact_bridge_payload(item, parent_key) for item in value]
+    if isinstance(value, tuple):
+        return [redact_bridge_payload(item, parent_key) for item in value]
+    if isinstance(value, bytes):
+        return f"<bytes omitted len={len(value)}>"
+    return value
+
+
+def should_omit_bridge_value(key: str) -> bool:
+    key = key.lower()
+    return any(part in key for part in BRIDGE_OMITTED_KEY_PARTS)
+
+
+def omitted_bridge_value(value: Any) -> str:
+    try:
+        size = len(value)
+    except TypeError:
+        return "<omitted>"
+    return f"<omitted len={size}>"
 
 
 def decode_monitor_arg(value: Any, encoding: str = "json") -> Any:
@@ -486,6 +542,13 @@ class RaceControlTower:
     async def handle_simulator_event(self, sid: str, event: str, args: tuple[Any, ...]) -> None:
         if sid not in self.simulator_sids:
             return
+
+        if self.settings.log_bridge_messages and event == "Bridge":
+            LOGGER.info(
+                "simulator Bridge data sid=%s\n%s",
+                sid,
+                bridge_log_payload(args, self.settings.log_bridge_max_chars),
+            )
 
         targets: list[dict[str, Any]] = []
         for devkit in self.devkits:
