@@ -17,7 +17,14 @@ import socketio
 from socketio import packet as socketio_packet
 from aiohttp import WSMsgType, web
 
-from .bridge import BridgeCache, BridgeRateTracker, extract_collision_counts, extract_monitor_telemetry
+from .bridge import (
+    BridgeCache,
+    BridgeRateTracker,
+    extract_collision_counts,
+    extract_lidar_range_arrays,
+    extract_lidar_scans,
+    extract_monitor_telemetry,
+)
 from .config import Settings, load_settings
 from .monitor import MonitorEventHub, safe_send
 from .monitor_protocol import (
@@ -386,6 +393,8 @@ class RaceControlTower:
         self.bridge_cache = BridgeCache(pending_limit=settings.client_queue_size)
         self.bridge_rates = BridgeRateTracker()
         self.collision_counts: dict[int, int] = {}
+        self.trace_lidar_vehicle_ids: set[int] = set()
+        self.monitor_vehicle_positions: dict[int, dict[str, Any]] = {}
         self.bridge_lock = asyncio.Lock()
         self.sio = socketio.AsyncServer(
             async_mode="aiohttp",
@@ -453,6 +462,10 @@ class RaceControlTower:
         app.router.add_post(
             "/monitor/REST/{version}/devkits/{vehicle_id}/{action}",
             self.handle_monitor_devkit_command,
+        )
+        app.router.add_post(
+            "/monitor/REST/{version}/vehicles/{vehicle_id}/trace-lidar",
+            self.handle_monitor_trace_lidar_command,
         )
         app.router.add_route("*", "/monitor/{tail:.*}", self.handle_unknown_monitor_path)
         app.router.add_get("/{tail:.*}", self.handle_static)
@@ -627,6 +640,37 @@ class RaceControlTower:
         await self.publish_status()
         return web.json_response({"ok": True, "state": self.status_payload()})
 
+    async def handle_monitor_trace_lidar_command(self, request: web.Request) -> web.Response:
+        version_path = f"/monitor/REST/{request.match_info['version']}"
+        if not is_monitor_rest_path(version_path):
+            return web.json_response({"error": "unsupported monitor protocol version"}, status=404)
+
+        try:
+            vehicle_id = int(request.match_info["vehicle_id"])
+        except ValueError:
+            return web.json_response({"error": "vehicle_id must be an integer"}, status=400)
+
+        if self._get_devkit_by_vehicle_id(vehicle_id) is None:
+            return web.json_response({"error": f"unknown vehicle_id {vehicle_id}"}, status=404)
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+
+        enabled = body.get("enabled", body.get("trace_lidar", body.get("value")))
+        if not isinstance(enabled, bool):
+            return web.json_response({"error": "trace-lidar command requires boolean enabled"}, status=400)
+
+        if enabled:
+            self.trace_lidar_vehicle_ids.add(vehicle_id)
+        else:
+            self.trace_lidar_vehicle_ids.discard(vehicle_id)
+
+        LOGGER.info("trace LiDAR V%s %s", vehicle_id, "enabled" if enabled else "disabled")
+        await self.publish_status()
+        return web.json_response({"ok": True, "vehicle_id": vehicle_id, "trace_lidar": enabled})
+
     async def handle_monitor_ws(self, request: web.Request) -> web.WebSocketResponse:
         if not is_monitor_ws_path(request.path):
             raise web.HTTPNotFound(text='{"error":"unsupported monitor protocol path"}')
@@ -800,6 +844,24 @@ class RaceControlTower:
         source: str = "simulator",
     ) -> None:
         telemetry = extract_monitor_telemetry(payload)
+        for vehicle_id, values in telemetry.items():
+            if isinstance(values.get("ips"), dict):
+                self.monitor_vehicle_positions[vehicle_id] = {"ips": values["ips"]}
+
+        lidar_positions = {
+            **self.monitor_vehicle_positions,
+            **{
+                vehicle_id: {"ips": values["ips"]}
+                for vehicle_id, values in telemetry.items()
+                if isinstance(values.get("ips"), dict)
+            },
+        }
+        lidar_scans: dict[int, Any] = extract_lidar_range_arrays(payload, self.trace_lidar_vehicle_ids)
+        for vehicle_id, points in extract_lidar_scans(payload, self.trace_lidar_vehicle_ids, lidar_positions).items():
+            lidar_scans.setdefault(vehicle_id, points)
+        for vehicle_id, points in lidar_scans.items():
+            telemetry.setdefault(vehicle_id, {})["lidar_scan"] = points
+
         if not telemetry:
             return
 
@@ -1123,6 +1185,7 @@ class RaceControlTower:
                 "version": MONITOR_PROTOCOL_VERSION,
             },
             "simulator_socketio_path": f"/{SOCKETIO_PATH}/",
+            "trace_lidar_vehicle_ids": sorted(self.trace_lidar_vehicle_ids),
             **snapshot,
         }
 

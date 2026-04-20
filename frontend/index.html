@@ -300,9 +300,9 @@
     <main class="flex-grow-1 d-flex">
       <div class="container-fluid rct-shell flex-grow-1 d-flex">
         <div class="row rct-shell-row flex-grow-1 w-100">
-          <div id="left-sidebar" class="col-sm-2 text-center h-100 rct-sidebar">
+          <div id="left-sidebar" class="col-sm-2 text-center h-100 rct-sidebar d-flex flex-column">
             <h2 class="h6 mt-3">Roboracer 1</h2>
-            <div class="px-2 text-start">
+            <div class="px-2 text-start d-flex flex-column flex-grow-1">
               <label for="roboracer1Ip" class="form-label small mb-1">Hostname (IP)</label>
               <input id="roboracer1Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
               <label for="roboracer1Port" class="form-label small mb-1">Port Number</label>
@@ -342,6 +342,7 @@
                   <dd id="roboracer1TotalPenalty" class="mb-0">00:00</dd>
                 </div>
               </dl>
+              <button id="roboracer1TraceLidar" class="btn btn-sm btn-primary w-100 mt-auto mb-3" type="button">Trace LiDAR</button>
             </div>
           </div>
           <div id="main-content" class="col-sm-8 h-100 p-0 position-relative" style="background-color: #000000;">
@@ -357,9 +358,9 @@
             <button id="recenterCanvas" class="btn btn-sm btn-outline-light rct-canvas-recenter" type="button" hidden>Re-Center</button>
             <canvas id="mainCanvas" class="rct-main-canvas" aria-label="AutoDRIVE Race Control Tower instructions"></canvas>
           </div>
-          <div id="right-sidebar" class="col-sm-2 text-center h-100 rct-sidebar">
+          <div id="right-sidebar" class="col-sm-2 text-center h-100 rct-sidebar d-flex flex-column">
             <h2 class="h6 mt-3">Roboracer 2</h2>
-            <div class="px-2 text-start">
+            <div class="px-2 text-start d-flex flex-column flex-grow-1">
               <label for="roboracer2Ip" class="form-label small mb-1">Hostname (IP)</label>
               <input id="roboracer2Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
               <label for="roboracer2Port" class="form-label small mb-1">Port Number</label>
@@ -399,6 +400,7 @@
                   <dd id="roboracer2TotalPenalty" class="mb-0">00:00</dd>
                 </div>
               </dl>
+              <button id="roboracer2TraceLidar" class="btn btn-sm btn-primary w-100 mt-auto mb-3" type="button">Trace LiDAR</button>
             </div>
           </div>
         </div>
@@ -436,6 +438,7 @@
           collisions: document.getElementById("roboracer1Collisions"),
           lastLap: document.getElementById("roboracer1LastLap"),
           bestLap: document.getElementById("roboracer1BestLap"),
+          traceLidarButton: document.getElementById("roboracer1TraceLidar"),
         },
         2: {
           hostInput: document.getElementById("roboracer2Ip"),
@@ -447,6 +450,7 @@
           collisions: document.getElementById("roboracer2Collisions"),
           lastLap: document.getElementById("roboracer2LastLap"),
           bestLap: document.getElementById("roboracer2BestLap"),
+          traceLidarButton: document.getElementById("roboracer2TraceLidar"),
         },
       };
       const mainCanvas = document.getElementById("mainCanvas");
@@ -467,14 +471,33 @@
         lastPointerY: 0,
       };
       const vehicleTelemetry = {
-        1: { ipsHistory: [] },
-        2: { ipsHistory: [] },
+        1: { ipsHistory: [], lidarDots: [], headingYaw: null },
+        2: { ipsHistory: [], lidarDots: [], headingYaw: null },
+      };
+      const traceLidarActive = {
+        1: false,
+        2: false,
+      };
+      const traceLidarEnabled = new URLSearchParams(window.location.search).get("experiment") === "1";
+      const lidarAngleMin = -2.35619;
+      const lidarAngleIncrement = 0.004363323;
+      const lidarOffset = {
+        x: 0.2733,
+        y: 0,
+      };
+      const traceLidarRequests = {
+        1: Promise.resolve(),
+        2: Promise.resolve(),
       };
 
       function frontendWebSocketUrl() {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const host = window.location.host || "localhost:4567";
         return `${protocol}//${host}/monitor/WS/latest`;
+      }
+
+      function monitorRestUrl(path) {
+        return `/monitor/REST/latest${path}`;
       }
 
       function setRctStatus(status) {
@@ -528,6 +551,25 @@
         rctSocket.send(JSON.stringify(command));
       }
 
+      async function postTraceLidar(vehicleId, enabled) {
+        if (!traceLidarEnabled) {
+          return;
+        }
+        traceLidarRequests[vehicleId] = traceLidarRequests[vehicleId]
+          .catch(() => {})
+          .then(() => fetch(monitorRestUrl(`/vehicles/${vehicleId}/trace-lidar`), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ enabled }),
+          }))
+          .catch((error) => {
+            console.warn(`Trace LiDAR ${enabled ? "press" : "release"} failed for V${vehicleId}:`, error);
+          });
+        await traceLidarRequests[vehicleId];
+      }
+
       function sendRoboracerConfiguration() {
         sendMonitorCommand({
           command: "configure-devkits",
@@ -571,6 +613,30 @@
         }
       }
 
+      function setTraceLidarButtonState(vehicleId, enabled) {
+        traceLidarActive[vehicleId] = enabled;
+        const button = roboracers[vehicleId].traceLidarButton;
+        if (!traceLidarEnabled) {
+          button.hidden = true;
+          return;
+        }
+        button.hidden = false;
+        button.className = enabled
+          ? "btn btn-sm btn-primary active w-100 mt-auto mb-3"
+          : "btn btn-sm btn-primary w-100 mt-auto mb-3";
+        button.setAttribute("aria-pressed", enabled ? "true" : "false");
+      }
+
+      function updateTraceLidarFromState(vehicleIds) {
+        if (!Array.isArray(vehicleIds)) {
+          return;
+        }
+        const traced = new Set(vehicleIds.map((vehicleId) => Number(vehicleId)));
+        for (const vehicleId of Object.keys(roboracers)) {
+          setTraceLidarButtonState(Number(vehicleId), traced.has(Number(vehicleId)));
+        }
+      }
+
       function formatNumber(value, fractionDigits = 2) {
         const number = Number(value);
         if (!Number.isFinite(number)) {
@@ -602,8 +668,151 @@
           while (history.length > ipsHistoryLimit) {
             history.shift();
           }
+          updateHeadingFromIps(vehicleId);
         }
         vehicleTelemetry[vehicleId].ips = point;
+      }
+
+      function updateHeadingFromIps(vehicleId) {
+        const history = vehicleTelemetry[vehicleId].ipsHistory;
+        if (history.length < 4) {
+          return;
+        }
+
+        const current = history[history.length - 1];
+        for (let index = history.length - 2; index >= 0; index -= 1) {
+          const previous = history[index];
+          const dx = current.x - previous.x;
+          const dy = current.y - previous.y;
+          if (Math.hypot(dx, dy) <= 0.35) {
+            continue;
+          }
+          vehicleTelemetry[vehicleId].headingYaw = Math.atan2(dy, dx);
+          return;
+        }
+      }
+
+      function rememberLidarScan(vehicleId, points) {
+        if (!Number.isFinite(vehicleTelemetry[vehicleId].headingYaw)) {
+          return;
+        }
+
+        const lidarDots = vehicleTelemetry[vehicleId].lidarDots;
+        for (const point of lidarLocalPointsFromScan(vehicleId, points)) {
+          const worldPoint = transformLidarPointToWorld(vehicleId, point);
+          if (worldPoint) {
+            lidarDots.push(worldPoint);
+          }
+        }
+      }
+
+      function rememberHeading(vehicleId, telemetry) {
+        if (Number.isFinite(vehicleTelemetry[vehicleId].headingYaw)) {
+          return;
+        }
+        const history = vehicleTelemetry[vehicleId].ipsHistory;
+        if (history.length > 0 && history.length < 4) {
+          return;
+        }
+
+        const headingYaw = Number(telemetry.heading_yaw);
+        if (Number.isFinite(headingYaw)) {
+          vehicleTelemetry[vehicleId].headingYaw = headingYaw;
+          return;
+        }
+
+        const linearVelocity = telemetry.linear_velocity;
+        if (!linearVelocity || typeof linearVelocity !== "object") {
+          return;
+        }
+
+        const vx = Number(linearVelocity.x);
+        const vy = Number(linearVelocity.y);
+        if (!Number.isFinite(vx) || !Number.isFinite(vy) || Math.hypot(vx, vy) <= 0.01) {
+          return;
+        }
+        vehicleTelemetry[vehicleId].headingYaw = Math.atan2(vy, vx);
+      }
+
+      function numericValuesFromText(text) {
+        const matches = String(text).match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g);
+        return matches ? matches.map(Number).filter(Number.isFinite) : [];
+      }
+
+      function pointFromValue(value) {
+        if (Array.isArray(value) && value.length >= 2) {
+          const x = Number(value[0]);
+          const y = Number(value[1]);
+          return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+        }
+        if (value && typeof value === "object") {
+          const x = Number(value.x ?? value.X);
+          const y = Number(value.y ?? value.Y);
+          return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+        }
+        if (typeof value === "string") {
+          const numbers = numericValuesFromText(value);
+          return numbers.length >= 2 ? { x: numbers[0], y: numbers[1] } : null;
+        }
+        return null;
+      }
+
+      function lidarLocalPointsFromScan(vehicleId, scan) {
+        if (typeof scan === "string") {
+          scan = numericValuesFromText(scan);
+        }
+        if (!Array.isArray(scan)) {
+          return [];
+        }
+
+        const structuredPoints = scan.map(pointFromValue).filter(Boolean);
+        if (structuredPoints.length > 0) {
+          return structuredPoints;
+        }
+
+        const numbers = scan.map(Number).filter(Number.isFinite);
+        if (numbers.length >= 2 && numbers.length % 2 === 0) {
+          const points = [];
+          for (let index = 0; index < numbers.length; index += 2) {
+            points.push({ x: numbers[index], y: numbers[index + 1] });
+          }
+          return points;
+        }
+
+        if (numbers.length === 0) {
+          return [];
+        }
+
+        const points = [];
+        for (let index = 0; index < numbers.length; index += 1) {
+          const radians = lidarAngleMin + lidarAngleIncrement * index;
+          points.push({
+            x: lidarOffset.x + numbers[index] * Math.cos(radians),
+            y: lidarOffset.y + numbers[index] * Math.sin(radians),
+          });
+        }
+        return points;
+      }
+
+      function transformLidarPointToWorld(vehicleId, point) {
+        const origin = vehicleTelemetry[vehicleId].ips;
+        if (!origin || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+          return null;
+        }
+        const headingYaw = vehicleTelemetry[vehicleId].headingYaw;
+        if (Number.isFinite(headingYaw)) {
+          const cos = Math.cos(headingYaw);
+          const sin = Math.sin(headingYaw);
+          return {
+            x: origin.x + point.x * cos - point.y * sin,
+            y: origin.y + point.x * sin + point.y * cos,
+          };
+        }
+
+        return {
+          x: origin.x + point.x,
+          y: origin.y + point.y,
+        };
       }
 
       function applyVehicleTelemetry(vehicleId, telemetry) {
@@ -622,6 +831,7 @@
           rememberIps(vehicleId, telemetry.ips);
           roboracer.ips.textContent = formatIps(telemetry.ips);
         }
+        rememberHeading(vehicleId, telemetry);
         if (Object.prototype.hasOwnProperty.call(telemetry, "collision_count")) {
           roboracer.collisions.textContent = formatNumber(telemetry.collision_count, 0);
         }
@@ -630,6 +840,9 @@
         }
         if (Object.prototype.hasOwnProperty.call(telemetry, "best_lap_time")) {
           roboracer.bestLap.textContent = formatNumber(telemetry.best_lap_time);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "lidar_scan")) {
+          rememberLidarScan(vehicleId, telemetry.lidar_scan);
         }
       }
 
@@ -656,6 +869,7 @@
         if (message.event === "status") {
           setSimulatorStatus(Number(message.simulator_clients || 0) > 0);
           updateRoboracerStatusFromState(message.devkits);
+          updateTraceLidarFromState(message.trace_lidar_vehicle_ids);
         } else if (message.event === "telemetry") {
           updateTelemetry(message.vehicles);
         }
@@ -689,6 +903,58 @@
 
       roboracers[1].statusButton.addEventListener("click", () => toggleRoboracer(1));
       roboracers[2].statusButton.addEventListener("click", () => toggleRoboracer(2));
+
+      function setTraceLidar(vehicleId, enabled) {
+        if (!traceLidarEnabled) {
+          return;
+        }
+        if (traceLidarActive[vehicleId] === enabled) {
+          return;
+        }
+        setTraceLidarButtonState(vehicleId, enabled);
+        void postTraceLidar(vehicleId, enabled);
+      }
+
+      function addTraceLidarHandlers(vehicleId) {
+        if (!traceLidarEnabled) {
+          roboracers[vehicleId].traceLidarButton.hidden = true;
+          return;
+        }
+        const button = roboracers[vehicleId].traceLidarButton;
+        button.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          button.setPointerCapture(event.pointerId);
+          setTraceLidar(vehicleId, true);
+        });
+        button.addEventListener("pointerup", (event) => {
+          event.preventDefault();
+          setTraceLidar(vehicleId, false);
+        });
+        button.addEventListener("pointercancel", () => setTraceLidar(vehicleId, false));
+        button.addEventListener("lostpointercapture", () => setTraceLidar(vehicleId, false));
+        button.addEventListener("keydown", (event) => {
+          if (event.key !== " " && event.key !== "Enter") {
+            return;
+          }
+          event.preventDefault();
+          setTraceLidar(vehicleId, true);
+        });
+        button.addEventListener("keyup", (event) => {
+          if (event.key !== " " && event.key !== "Enter") {
+            return;
+          }
+          event.preventDefault();
+          setTraceLidar(vehicleId, false);
+        });
+      }
+
+      addTraceLidarHandlers(1);
+      addTraceLidarHandlers(2);
+
+      window.addEventListener("blur", () => {
+        setTraceLidar(1, false);
+        setTraceLidar(2, false);
+      });
 
       function canvasPointFromEvent(event) {
         const rect = mainCanvas.getBoundingClientRect();
@@ -920,6 +1186,7 @@
         const points = [];
         for (const telemetry of Object.values(vehicleTelemetry)) {
           points.push(...telemetry.ipsHistory);
+          points.push(...telemetry.lidarDots);
         }
         return points;
       }
@@ -1050,7 +1317,19 @@
           for (const point of history) {
             const canvasPoint = worldToCanvas(point, width, height, scale);
             mainContext.beginPath();
-            mainContext.arc(canvasPoint.x, canvasPoint.y, 3, 0, Math.PI * 2);
+            mainContext.arc(canvasPoint.x, canvasPoint.y, 1.5, 0, Math.PI * 2);
+            mainContext.fill();
+          }
+        }
+      }
+
+      function drawLidarDots(width, height, scale) {
+        mainContext.fillStyle = "#dc2626";
+        for (const telemetry of Object.values(vehicleTelemetry)) {
+          for (const point of telemetry.lidarDots) {
+            const canvasPoint = worldToCanvas(point, width, height, scale);
+            mainContext.beginPath();
+            mainContext.arc(canvasPoint.x, canvasPoint.y, 0.5, 0, Math.PI * 2);
             mainContext.fill();
           }
         }
@@ -1085,6 +1364,7 @@
 
         const scale = gridScale(width, height);
         drawGrid(width, height, scale);
+        drawLidarDots(width, height, scale);
         drawVehicleHistory(width, height, scale);
         drawVehicles(width, height, scale);
       }
