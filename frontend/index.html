@@ -10,7 +10,7 @@
     <meta name="description" content="">
     <meta name="author" content="Mark Otto, Jacob Thornton, and Bootstrap contributors">
     <meta name="generator" content="Astro v5.13.2">
-    <title>Album example · Bootstrap v5.3</title>
+    <title>AutoDRIVE Race Control Tower</title>
     <link rel="icon" href="assets/favicon.png" type="image/png">
     <script src="vendor/jquery/jquery-4.0.0.min.js" integrity="sha256-OaVG6prZf4v69dPg6PhVattBXkcOWQB62pdZ3ORyrao="></script>
     <link href="vendor/bootstrap/bootstrap-5.3.8.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB">
@@ -187,15 +187,34 @@
         display: flex;
         gap: 0.5rem;
         left: 0.75rem;
+        opacity: 0;
+        pointer-events: none;
         position: absolute;
+        transition: opacity 0.2s ease;
+        visibility: hidden;
         z-index: 2;
       }
 
       .rct-canvas-recenter {
         bottom: 0.75rem;
+        opacity: 0;
+        pointer-events: none;
         position: absolute;
         right: 0.75rem;
+        transition: opacity 0.2s ease;
+        visibility: hidden;
         z-index: 2;
+      }
+
+      .rct-canvas-controls.is-visible,
+      .rct-canvas-recenter.is-visible {
+        opacity: 1;
+        pointer-events: auto;
+        visibility: visible;
+      }
+
+      .rct-canvas-recenter[hidden] {
+        display: none;
       }
 
       .rct-canvas-control-label {
@@ -207,10 +226,6 @@
         font-size: 0.875rem;
         line-height: 1;
         padding: 0.25rem 0.5rem;
-      }
-
-      .rct-canvas-recenter[hidden] {
-        display: none;
       }
 
       .rct-canvas-controls .btn,
@@ -393,11 +408,11 @@
       <div class="container-fluid d-flex justify-content-between align-items-center">
         <div class="status-indicator">
           <span id="simulatorStatusDot" class="status-dot status-dot-offline" aria-hidden="true"></span>
-          <span>AutoDRIVE Simulator</span>
+          <span>Simulator</span>
           <strong id="simulatorStatusText">Disconnected</strong>
         </div>
         <div class="status-indicator">
-          <span>RCT</span>
+          <span>RCT Server</span>
           <strong id="rctStatusText">Connecting</strong>
           <span id="rctStatusDot" class="status-dot status-dot-connecting" aria-hidden="true"></span>
         </div>
@@ -438,8 +453,10 @@
       const mainContext = mainCanvas.getContext("2d");
       const mainImage = new Image();
       const rotationButtons = Array.from(document.querySelectorAll("[data-rotation]"));
+      const canvasControls = document.querySelector(".rct-canvas-controls");
       const recenterCanvasButton = document.getElementById("recenterCanvas");
       const ipsHistoryLimit = 100;
+      let canvasControlsTimer = null;
       const canvasView = {
         zoom: 1,
         rotation: 90,
@@ -681,12 +698,35 @@
         };
       }
 
+      function showCanvasControls() {
+        canvasControls.classList.add("is-visible");
+        if (!recenterCanvasButton.hidden) {
+          recenterCanvasButton.classList.add("is-visible");
+        }
+        if (canvasControlsTimer !== null) {
+          window.clearTimeout(canvasControlsTimer);
+        }
+        canvasControlsTimer = window.setTimeout(() => {
+          canvasControls.classList.remove("is-visible");
+          recenterCanvasButton.classList.remove("is-visible");
+          canvasControlsTimer = null;
+        }, 5000);
+      }
+
       function updateRecenterButton() {
-        const isDefaultView =
+        const canRecenter = !(
           Math.abs(canvasView.panX) < 0.5
           && Math.abs(canvasView.panY) < 0.5
-          && Math.abs(canvasView.zoom - 1) < 0.001;
-        recenterCanvasButton.hidden = isDefaultView;
+          && Math.abs(canvasView.zoom - 1) < 0.001
+        );
+        recenterCanvasButton.hidden = !canRecenter;
+        recenterCanvasButton.disabled = !canRecenter;
+        recenterCanvasButton.className = "btn btn-sm btn-outline-light rct-canvas-recenter";
+        if (canRecenter && canvasControls.classList.contains("is-visible")) {
+          recenterCanvasButton.classList.add("is-visible");
+        } else {
+          recenterCanvasButton.classList.remove("is-visible");
+        }
       }
 
       function setRotation(degrees) {
@@ -699,8 +739,12 @@
         drawMainCanvas();
       }
 
+      mainCanvas.addEventListener("mouseenter", showCanvasControls);
+      mainCanvas.addEventListener("mousemove", showCanvasControls);
+
       mainCanvas.addEventListener("wheel", (event) => {
         event.preventDefault();
+        showCanvasControls();
         const { height, width } = resizeMainCanvas();
         const cursor = canvasPointFromEvent(event);
         const oldScale = gridScale(width, height);
@@ -721,6 +765,7 @@
           return;
         }
         event.preventDefault();
+        showCanvasControls();
         canvasView.isPanning = true;
         canvasView.lastPointerX = event.clientX;
         canvasView.lastPointerY = event.clientY;
@@ -731,6 +776,7 @@
         if (!canvasView.isPanning) {
           return;
         }
+        showCanvasControls();
         canvasView.panX += event.clientX - canvasView.lastPointerX;
         canvasView.panY += event.clientY - canvasView.lastPointerY;
         canvasView.lastPointerX = event.clientX;
@@ -748,6 +794,7 @@
       window.addEventListener("blur", stopCanvasPan);
 
       recenterCanvasButton.addEventListener("click", () => {
+        showCanvasControls();
         canvasView.zoom = 1;
         canvasView.panX = 0;
         canvasView.panY = 0;
@@ -757,6 +804,7 @@
 
       for (const button of rotationButtons) {
         button.addEventListener("click", () => {
+          showCanvasControls();
           setRotation(Number(button.dataset.rotation));
         });
       }
