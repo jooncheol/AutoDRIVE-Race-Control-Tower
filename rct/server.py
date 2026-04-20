@@ -206,6 +206,17 @@ def devkit_endpoint_key(host: str, port: int) -> tuple[str, int]:
     return (host.strip().lower(), port)
 
 
+def devkit_endpoint_from_url(url: str) -> tuple[str, int] | None:
+    parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.hostname is None or port is None:
+        return None
+    return parsed.hostname, port
+
+
 @dataclass
 class DevKitConnection:
     name: str
@@ -392,6 +403,13 @@ class RaceControlTower:
                 start=1,
             )
         ]
+        for devkit in self.devkits:
+            endpoint = devkit_endpoint_from_url(devkit.url)
+            if endpoint is None:
+                LOGGER.warning("%s URL %r does not include a valid host and port", devkit.name, devkit.url)
+                continue
+            devkit.host, devkit.port = endpoint
+            devkit.configured = True
         self.state.configure_devkits(
             DevKitMonitorState(
                 devkit.name,

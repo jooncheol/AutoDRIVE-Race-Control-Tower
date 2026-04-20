@@ -184,7 +184,7 @@ Monitor WebSocket command surface:
 }
 ```
 
-The frontend sends `configure-devkits` when it connects to RCT. RCT stores those endpoints and does not connect DevKit bridge instances from startup defaults. When the simulator connects, RCT connects only configured and enabled DevKit bridge instances. The connected/disconnected frontend buttons send `connect-devkit` and `disconnect-devkit` commands for manual control.
+RCT initializes DevKit bridge endpoints from `RCT_DEVKIT_URLS` and connects configured and enabled DevKit bridge instances when the simulator connects, even if no frontend is connected. The frontend sends `configure-devkits` when it connects to RCT; RCT stores those endpoints and reconnects the affected bridge instances as needed. The connected/disconnected frontend buttons send `connect-devkit` and `disconnect-devkit` commands for manual control.
 
 ## Bridge Proxy Cache
 

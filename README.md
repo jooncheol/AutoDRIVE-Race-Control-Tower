@@ -108,7 +108,7 @@ Environment variables:
 | --- | --- | --- |
 | `RCT_HOST` | `0.0.0.0` | RCT HTTP/Socket.IO bind host |
 | `RCT_PORT` | `4567` | RCT HTTP/Socket.IO port |
-| `RCT_DEVKIT_URLS` | `ws://127.0.0.1:4568,ws://127.0.0.1:4569` | Comma-separated DevKit slots created at startup. The active host/port is supplied by the frontend |
+| `RCT_DEVKIT_URLS` | `ws://127.0.0.1:4568,ws://127.0.0.1:4569` | Comma-separated DevKit endpoints created at startup and connected when the simulator connects |
 | `RCT_DEVKIT_VEHICLE_IDS` | `1,2,...` | Comma-separated simulator vehicle ids assigned to each DevKit URL |
 | `RCT_RECONNECT_DELAY_SECONDS` | `3.0` | Delay before reconnecting to a DevKit endpoint |
 | `RCT_MAX_MESSAGE_SIZE` | `16777216` | Maximum HTTP/WebSocket message size. Use `0` or less for no limit |
@@ -129,7 +129,7 @@ Environment variables:
 
 Run RCT, then open `http://localhost:4567/` in a browser. RCT serves `frontend/index.html` and static assets from the bundled `frontend` directory. The page uses Bootstrap and connects to the monitor WebSocket endpoint for RCT connection state.
 
-The frontend sends the Roboracer 1 and 2 hostname/port fields to RCT when the monitor WebSocket connects. RCT stores those endpoints and connects configured/enabled DevKit bridge instances when the simulator connects. The Roboracer connected/disconnected buttons can also manually connect or disconnect each DevKit bridge instance.
+RCT reads the Roboracer 1 and 2 endpoints from `RCT_DEVKIT_URLS` at startup and connects configured/enabled DevKit bridge instances when the simulator connects, even if the frontend is not open. The frontend sends the Roboracer hostname/port fields to RCT when the monitor WebSocket connects, which updates those endpoints. The Roboracer connected/disconnected buttons can also manually connect or disconnect each DevKit bridge instance.
 
 ## Monitor Protocol
 

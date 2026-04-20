@@ -111,7 +111,9 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
             reconnect_delay_seconds=0.01,
         )
         tower = RaceControlTower(settings)
-        await tower.configure_devkit(tower.devkits[0], "127.0.0.1", devkit_port, enabled=True)
+        self.assertTrue(tower.devkits[0].configured)
+        self.assertEqual(tower.devkits[0].host, "127.0.0.1")
+        self.assertEqual(tower.devkits[0].port, devkit_port)
         tower_app = tower.create_app()
         tower_runner = web.AppRunner(tower_app)
         await tower_runner.setup()
