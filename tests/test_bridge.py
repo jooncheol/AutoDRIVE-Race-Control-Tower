@@ -7,6 +7,7 @@ from rct.bridge import (
     BridgeRateTracker,
     OUTGOING_BRIDGE_DEFAULTS,
     extract_collision_counts,
+    extract_monitor_telemetry,
 )
 
 
@@ -125,6 +126,47 @@ class CollisionCountTests(unittest.TestCase):
         counts = extract_collision_counts({"V1 Collision Count": "n/a"})
 
         self.assertEqual(counts, {})
+
+
+class MonitorTelemetryTests(unittest.TestCase):
+    def test_extracts_only_monitor_telemetry_fields(self):
+        telemetry = extract_monitor_telemetry(
+            {
+                "V1 Best Lap Time": "12.34",
+                "V1 Collision Count": "2",
+                "V1 Position": "1.5 -2.0 0.3",
+                "V1 Lap Count": 4,
+                "V1 Last Lap Time": "13.37",
+                "V1 Speed": "5.5",
+                "V1 Throttle": "ignored",
+                "V2 collision_count": 1.0,
+                "/autodrive/roboracer_2/ips": {"x": 7, "y": 8},
+            }
+        )
+
+        self.assertEqual(telemetry[1]["best_lap_time"], "12.34")
+        self.assertEqual(telemetry[1]["collision_count"], 2)
+        self.assertEqual(telemetry[1]["ips"]["x"], 1.5)
+        self.assertEqual(telemetry[1]["ips"]["y"], -2.0)
+        self.assertEqual(telemetry[1]["lap_count"], 4)
+        self.assertEqual(telemetry[1]["last_lap_count"], "13.37")
+        self.assertEqual(telemetry[1]["speed"], 5.5)
+        self.assertNotIn("throttle", telemetry[1])
+        self.assertEqual(telemetry[2]["collision_count"], 1)
+        self.assertEqual(telemetry[2]["ips"]["x"], 7.0)
+        self.assertEqual(telemetry[2]["ips"]["y"], 8.0)
+
+    def test_extracts_monitor_telemetry_from_topic_message(self):
+        telemetry = extract_monitor_telemetry(
+            {
+                "topic": "/autodrive/roboracer_2/ips",
+                "payload": [3, 4, 0],
+                "ignored": "value",
+            }
+        )
+
+        self.assertEqual(telemetry[2]["ips"]["x"], 3.0)
+        self.assertEqual(telemetry[2]["ips"]["y"], 4.0)
 
 
 if __name__ == "__main__":

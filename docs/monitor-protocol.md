@@ -115,37 +115,36 @@ Initial event:
 }
 ```
 
-Existing frame event:
+Simulator telemetry event:
 
 ```json
 {
-  "event": "frame",
+  "event": "telemetry",
   "timestamp": "2026-04-19T00:00:00+00:00",
   "source": "simulator",
-  "targets": [
-    {
-      "name": "devkit:1",
-      "vehicle_id": 1
-    }
-  ],
   "socketio_event": "Bridge",
-  "args": [
-    {
-      "encoding": "json",
-      "payload": {}
+  "vehicles": {
+    "1": {
+      "best_lap_time": "00:12.34",
+      "collision_count": 0,
+      "ips": {
+        "x": 1.25,
+        "y": -0.5
+      },
+      "lap_count": 2,
+      "last_lap_count": "00:13.10",
+      "speed": 3.2
     }
-  ]
+  }
 }
 ```
 
-Planned live monitor event categories:
+Live monitor event categories:
 
 - `status`: RCT server, simulator, monitor client, and DevKit connection state
-- `vehicle_state`: per-Roboracer IPS and vehicle telemetry
-- `lap_time`: lap count, this lap, last lap, best lap, and total penalty
-- `collision`: collision count updates
+- `telemetry`: filtered per-Roboracer simulator values for `best_lap_time`, `collision_count`, `ips`, `lap_count`, `last_lap_count`, and `speed`
 - `bridge_rate`: bridge protocol Hz between simulator and each Roboracer DevKit instance
-- `frame`: raw or encoded bridge protocol observation event
+- `frame`: DevKit-to-simulator command observation event
 - `error`: monitor protocol or command error
 
 Monitor WebSocket command surface:

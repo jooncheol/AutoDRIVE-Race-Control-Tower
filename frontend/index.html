@@ -170,10 +170,66 @@
       }
 
       .rct-main-canvas {
+        cursor: grab;
         display: block;
         height: 100%;
+        touch-action: none;
         width: 100%;
       }
+
+      .rct-main-canvas.is-panning {
+        cursor: grabbing;
+      }
+
+      .rct-canvas-controls {
+        align-items: center;
+        bottom: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+        left: 0.75rem;
+        position: absolute;
+        z-index: 2;
+      }
+
+      .rct-canvas-recenter {
+        bottom: 0.75rem;
+        position: absolute;
+        right: 0.75rem;
+        z-index: 2;
+      }
+
+      .rct-canvas-control-label {
+        align-items: center;
+        background-color: rgba(0, 0, 0, 0.55);
+        border-radius: 6px;
+        color: #f8f9fa;
+        display: inline-flex;
+        font-size: 0.875rem;
+        line-height: 1;
+        padding: 0.25rem 0.5rem;
+      }
+
+      .rct-canvas-recenter[hidden] {
+        display: none;
+      }
+
+      .rct-canvas-controls .btn,
+      .rct-canvas-recenter {
+        border-radius: 6px;
+      }
+
+      .rct-canvas-controls .btn-group {
+        border-radius: 6px;
+      }
+
+      .rct-canvas-controls .btn {
+        min-width: 3rem;
+      }
+
+      .rct-canvas-recenter {
+        min-width: 6.5rem;
+      }
+
     </style>
   </head>
   <body class="d-flex flex-column">
@@ -243,6 +299,14 @@
                   <dd id="roboracer1LapCount" class="mb-1">0</dd>
                 </div>
                 <div class="d-flex justify-content-between">
+                  <dt>Speed:</dt>
+                  <dd id="roboracer1Speed" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>IPS:</dt>
+                  <dd id="roboracer1Ips" class="mb-1">0, 0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
                   <dt>Collisions:</dt>
                   <dd id="roboracer1Collisions" class="mb-1">0</dd>
                 </div>
@@ -265,7 +329,17 @@
               </dl>
             </div>
           </div>
-          <div id="main-content" class="col-sm-8 h-100 p-0" style="background-color: #000000;">
+          <div id="main-content" class="col-sm-8 h-100 p-0 position-relative" style="background-color: #000000;">
+            <div class="rct-canvas-controls" aria-label="Map rotation">
+              <span class="rct-canvas-control-label">Roate</span>
+              <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-outline-light" type="button" data-rotation="0">0°</button>
+                <button class="btn btn-success" type="button" data-rotation="90">90°</button>
+                <button class="btn btn-outline-light" type="button" data-rotation="180">180°</button>
+                <button class="btn btn-outline-light" type="button" data-rotation="270">270°</button>
+              </div>
+            </div>
+            <button id="recenterCanvas" class="btn btn-sm btn-outline-light rct-canvas-recenter" type="button" hidden>Re-Center</button>
             <canvas id="mainCanvas" class="rct-main-canvas" aria-label="AutoDRIVE Race Control Tower instructions"></canvas>
           </div>
           <div id="right-sidebar" class="col-sm-2 text-center h-100 rct-sidebar">
@@ -280,6 +354,14 @@
                 <div class="d-flex justify-content-between">
                   <dt>Lap count:</dt>
                   <dd id="roboracer2LapCount" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Speed:</dt>
+                  <dd id="roboracer2Speed" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>IPS:</dt>
+                  <dd id="roboracer2Ips" class="mb-1">0, 0</dd>
                 </div>
                 <div class="d-flex justify-content-between">
                   <dt>Collisions:</dt>
@@ -333,17 +415,44 @@
           hostInput: document.getElementById("roboracer1Ip"),
           portInput: document.getElementById("roboracer1Port"),
           statusButton: document.getElementById("roboracer1Status"),
+          lapCount: document.getElementById("roboracer1LapCount"),
+          speed: document.getElementById("roboracer1Speed"),
+          ips: document.getElementById("roboracer1Ips"),
+          collisions: document.getElementById("roboracer1Collisions"),
+          lastLap: document.getElementById("roboracer1LastLap"),
+          bestLap: document.getElementById("roboracer1BestLap"),
         },
         2: {
           hostInput: document.getElementById("roboracer2Ip"),
           portInput: document.getElementById("roboracer2Port"),
           statusButton: document.getElementById("roboracer2Status"),
+          lapCount: document.getElementById("roboracer2LapCount"),
+          speed: document.getElementById("roboracer2Speed"),
+          ips: document.getElementById("roboracer2Ips"),
+          collisions: document.getElementById("roboracer2Collisions"),
+          lastLap: document.getElementById("roboracer2LastLap"),
+          bestLap: document.getElementById("roboracer2BestLap"),
         },
       };
       const mainCanvas = document.getElementById("mainCanvas");
       const mainContext = mainCanvas.getContext("2d");
       const mainImage = new Image();
-      let mainCanvasMode = "init";
+      const rotationButtons = Array.from(document.querySelectorAll("[data-rotation]"));
+      const recenterCanvasButton = document.getElementById("recenterCanvas");
+      const ipsHistoryLimit = 100;
+      const canvasView = {
+        zoom: 1,
+        rotation: 90,
+        panX: 0,
+        panY: 0,
+        isPanning: false,
+        lastPointerX: 0,
+        lastPointerY: 0,
+      };
+      const vehicleTelemetry = {
+        1: { ipsHistory: [] },
+        2: { ipsHistory: [] },
+      };
 
       function frontendWebSocketUrl() {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -364,7 +473,6 @@
       function setSimulatorStatus(connected) {
         simulatorStatusText.textContent = connected ? "Connected" : "Disconnected";
         simulatorStatusDot.className = `status-dot status-dot-${connected ? "online" : "offline"}`;
-        mainCanvasMode = connected ? "race" : "init";
         drawMainCanvas();
       }
 
@@ -446,6 +554,79 @@
         }
       }
 
+      function formatNumber(value, fractionDigits = 2) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) {
+          return value == null ? "-" : String(value);
+        }
+        return number.toFixed(fractionDigits).replace(/\.?0+$/, "");
+      }
+
+      function formatIps(ips) {
+        if (!ips || !Number.isFinite(Number(ips.x)) || !Number.isFinite(Number(ips.y))) {
+          return "-";
+        }
+        return `${formatNumber(ips.x)}, ${formatNumber(ips.y)}`;
+      }
+
+      function rememberIps(vehicleId, ips) {
+        if (!ips || !Number.isFinite(Number(ips.x)) || !Number.isFinite(Number(ips.y))) {
+          return;
+        }
+
+        const history = vehicleTelemetry[vehicleId].ipsHistory;
+        const point = {
+          x: Number(ips.x),
+          y: Number(ips.y),
+        };
+        const previous = history[history.length - 1];
+        if (!previous || previous.x !== point.x || previous.y !== point.y) {
+          history.push(point);
+          while (history.length > ipsHistoryLimit) {
+            history.shift();
+          }
+        }
+        vehicleTelemetry[vehicleId].ips = point;
+      }
+
+      function applyVehicleTelemetry(vehicleId, telemetry) {
+        const roboracer = roboracers[vehicleId];
+        if (!roboracer || !telemetry || typeof telemetry !== "object") {
+          return;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(telemetry, "lap_count")) {
+          roboracer.lapCount.textContent = formatNumber(telemetry.lap_count, 0);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "speed")) {
+          roboracer.speed.textContent = formatNumber(telemetry.speed);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "ips")) {
+          rememberIps(vehicleId, telemetry.ips);
+          roboracer.ips.textContent = formatIps(telemetry.ips);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "collision_count")) {
+          roboracer.collisions.textContent = formatNumber(telemetry.collision_count, 0);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "last_lap_count")) {
+          roboracer.lastLap.textContent = formatNumber(telemetry.last_lap_count);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "best_lap_time")) {
+          roboracer.bestLap.textContent = formatNumber(telemetry.best_lap_time);
+        }
+      }
+
+      function updateTelemetry(vehicles) {
+        if (!vehicles || typeof vehicles !== "object") {
+          return;
+        }
+
+        for (const [vehicleIdText, telemetry] of Object.entries(vehicles)) {
+          applyVehicleTelemetry(Number(vehicleIdText), telemetry);
+        }
+        drawMainCanvas();
+      }
+
       function handleMonitorMessage(data) {
         let message = null;
         try {
@@ -458,6 +639,8 @@
         if (message.event === "status") {
           setSimulatorStatus(Number(message.simulator_clients || 0) > 0);
           updateRoboracerStatusFromState(message.devkits);
+        } else if (message.event === "telemetry") {
+          updateTelemetry(message.vehicles);
         }
       }
 
@@ -489,6 +672,94 @@
 
       roboracers[1].statusButton.addEventListener("click", () => toggleRoboracer(1));
       roboracers[2].statusButton.addEventListener("click", () => toggleRoboracer(2));
+
+      function canvasPointFromEvent(event) {
+        const rect = mainCanvas.getBoundingClientRect();
+        return {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        };
+      }
+
+      function updateRecenterButton() {
+        const isDefaultView =
+          Math.abs(canvasView.panX) < 0.5
+          && Math.abs(canvasView.panY) < 0.5
+          && Math.abs(canvasView.zoom - 1) < 0.001;
+        recenterCanvasButton.hidden = isDefaultView;
+      }
+
+      function setRotation(degrees) {
+        canvasView.rotation = degrees;
+        for (const button of rotationButtons) {
+          const selected = Number(button.dataset.rotation) === degrees;
+          button.className = selected ? "btn btn-success" : "btn btn-outline-light";
+          button.setAttribute("aria-pressed", selected ? "true" : "false");
+        }
+        drawMainCanvas();
+      }
+
+      mainCanvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const { height, width } = resizeMainCanvas();
+        const cursor = canvasPointFromEvent(event);
+        const oldScale = gridScale(width, height);
+        const worldPoint = canvasToWorld(cursor, width, height, oldScale);
+        const zoomFactor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+
+        canvasView.zoom = Math.min(12, Math.max(0.2, canvasView.zoom * zoomFactor));
+        const newScale = gridScale(width, height);
+        const shiftedCursor = worldToCanvas(worldPoint, width, height, newScale);
+        canvasView.panX += cursor.x - shiftedCursor.x;
+        canvasView.panY += cursor.y - shiftedCursor.y;
+        updateRecenterButton();
+        drawMainCanvas();
+      }, { passive: false });
+
+      mainCanvas.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        canvasView.isPanning = true;
+        canvasView.lastPointerX = event.clientX;
+        canvasView.lastPointerY = event.clientY;
+        mainCanvas.classList.add("is-panning");
+      });
+
+      window.addEventListener("mousemove", (event) => {
+        if (!canvasView.isPanning) {
+          return;
+        }
+        canvasView.panX += event.clientX - canvasView.lastPointerX;
+        canvasView.panY += event.clientY - canvasView.lastPointerY;
+        canvasView.lastPointerX = event.clientX;
+        canvasView.lastPointerY = event.clientY;
+        updateRecenterButton();
+        drawMainCanvas();
+      });
+
+      function stopCanvasPan() {
+        canvasView.isPanning = false;
+        mainCanvas.classList.remove("is-panning");
+      }
+
+      window.addEventListener("mouseup", stopCanvasPan);
+      window.addEventListener("blur", stopCanvasPan);
+
+      recenterCanvasButton.addEventListener("click", () => {
+        canvasView.zoom = 1;
+        canvasView.panX = 0;
+        canvasView.panY = 0;
+        updateRecenterButton();
+        drawMainCanvas();
+      });
+
+      for (const button of rotationButtons) {
+        button.addEventListener("click", () => {
+          setRotation(Number(button.dataset.rotation));
+        });
+      }
 
       function roundedRect(context, x, y, width, height, radius) {
         context.beginPath();
@@ -597,15 +868,177 @@
         }
       }
 
+      function allIpsPoints() {
+        const points = [];
+        for (const telemetry of Object.values(vehicleTelemetry)) {
+          points.push(...telemetry.ipsHistory);
+        }
+        return points;
+      }
+
+      function gridScale(width, height) {
+        const points = allIpsPoints();
+        const maxAbs = points.reduce((maximum, point) => {
+          return Math.max(maximum, Math.abs(point.x), Math.abs(point.y));
+        }, 10);
+        const canvasExtent = Math.max(1, Math.min(width, height));
+        const baseScale = Math.max(1, Math.min(24, (canvasExtent * 0.45) / Math.max(1, maxAbs)));
+        return baseScale * canvasView.zoom;
+      }
+
+      function worldToCanvas(point, width, height, scale) {
+        const radians = (canvasView.rotation * Math.PI) / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+        const rotatedX = point.x * cos - point.y * sin;
+        const rotatedY = point.x * sin + point.y * cos;
+
+        return {
+          x: width / 2 + canvasView.panX + rotatedX * scale,
+          y: height / 2 + canvasView.panY - rotatedY * scale,
+        };
+      }
+
+      function canvasToWorld(point, width, height, scale) {
+        const screenX = (point.x - width / 2 - canvasView.panX) / scale;
+        const screenY = -(point.y - height / 2 - canvasView.panY) / scale;
+        const radians = (canvasView.rotation * Math.PI) / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+
+        return {
+          x: screenX * cos + screenY * sin,
+          y: -screenX * sin + screenY * cos,
+        };
+      }
+
+      function gridWorldStep(scale) {
+        if (scale < 4) {
+          return 10;
+        }
+        if (scale < 8) {
+          return 5;
+        }
+        if (scale < 16) {
+          return 2;
+        }
+        return 1;
+      }
+
+      function visibleWorldBounds(width, height, scale) {
+        const corners = [
+          canvasToWorld({ x: 0, y: 0 }, width, height, scale),
+          canvasToWorld({ x: width, y: 0 }, width, height, scale),
+          canvasToWorld({ x: width, y: height }, width, height, scale),
+          canvasToWorld({ x: 0, y: height }, width, height, scale),
+        ];
+        const bounds = corners.reduce(
+          (current, point) => ({
+            minX: Math.min(current.minX, point.x),
+            maxX: Math.max(current.maxX, point.x),
+            minY: Math.min(current.minY, point.y),
+            maxY: Math.max(current.maxY, point.y),
+          }),
+          {
+            minX: Infinity,
+            maxX: -Infinity,
+            minY: Infinity,
+            maxY: -Infinity,
+          },
+        );
+
+        return {
+          minX: bounds.minX - 1,
+          maxX: bounds.maxX + 1,
+          minY: bounds.minY - 1,
+          maxY: bounds.maxY + 1,
+        };
+      }
+
+      function drawGrid(width, height, scale) {
+        const worldStep = gridWorldStep(scale);
+        const bounds = visibleWorldBounds(width, height, scale);
+        const startX = Math.floor(bounds.minX / worldStep) * worldStep;
+        const endX = Math.ceil(bounds.maxX / worldStep) * worldStep;
+        const startY = Math.floor(bounds.minY / worldStep) * worldStep;
+        const endY = Math.ceil(bounds.maxY / worldStep) * worldStep;
+
+        mainContext.strokeStyle = "#4b5563";
+        mainContext.lineWidth = 1;
+        mainContext.beginPath();
+
+        for (let x = startX; x <= endX; x += worldStep) {
+          const top = worldToCanvas({ x, y: bounds.minY }, width, height, scale);
+          const bottom = worldToCanvas({ x, y: bounds.maxY }, width, height, scale);
+          mainContext.moveTo(top.x, top.y);
+          mainContext.lineTo(bottom.x, bottom.y);
+        }
+        for (let y = startY; y <= endY; y += worldStep) {
+          const left = worldToCanvas({ x: bounds.minX, y }, width, height, scale);
+          const right = worldToCanvas({ x: bounds.maxX, y }, width, height, scale);
+          mainContext.moveTo(left.x, left.y);
+          mainContext.lineTo(right.x, right.y);
+        }
+        mainContext.stroke();
+
+        mainContext.strokeStyle = "#9ca3af";
+        mainContext.lineWidth = 2;
+        mainContext.beginPath();
+        const yAxisStart = worldToCanvas({ x: 0, y: bounds.minY }, width, height, scale);
+        const yAxisEnd = worldToCanvas({ x: 0, y: bounds.maxY }, width, height, scale);
+        const xAxisStart = worldToCanvas({ x: bounds.minX, y: 0 }, width, height, scale);
+        const xAxisEnd = worldToCanvas({ x: bounds.maxX, y: 0 }, width, height, scale);
+        mainContext.moveTo(yAxisStart.x, yAxisStart.y);
+        mainContext.lineTo(yAxisEnd.x, yAxisEnd.y);
+        mainContext.moveTo(xAxisStart.x, xAxisStart.y);
+        mainContext.lineTo(xAxisEnd.x, xAxisEnd.y);
+        mainContext.stroke();
+      }
+
+      function drawVehicleHistory(width, height, scale) {
+        mainContext.fillStyle = "#22c55e";
+        for (const telemetry of Object.values(vehicleTelemetry)) {
+          const history = telemetry.ipsHistory.slice(0, -1);
+          for (const point of history) {
+            const canvasPoint = worldToCanvas(point, width, height, scale);
+            mainContext.beginPath();
+            mainContext.arc(canvasPoint.x, canvasPoint.y, 3, 0, Math.PI * 2);
+            mainContext.fill();
+          }
+        }
+      }
+
+      function drawVehicles(width, height, scale) {
+        for (const [vehicleId, telemetry] of Object.entries(vehicleTelemetry)) {
+          if (!telemetry.ips) {
+            continue;
+          }
+
+          const canvasPoint = worldToCanvas(telemetry.ips, width, height, scale);
+          mainContext.fillStyle = "#9ca3af";
+          mainContext.beginPath();
+          mainContext.arc(canvasPoint.x, canvasPoint.y, 12, 0, Math.PI * 2);
+          mainContext.fill();
+
+          mainContext.fillStyle = "#111827";
+          mainContext.font = "700 13px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+          mainContext.textAlign = "center";
+          mainContext.textBaseline = "middle";
+          mainContext.fillText(vehicleId, canvasPoint.x, canvasPoint.y);
+        }
+        mainContext.textAlign = "start";
+      }
+
       function drawMainCanvas() {
         const { height, width } = resizeMainCanvas();
         mainContext.clearRect(0, 0, width, height);
         mainContext.fillStyle = "#000000";
         mainContext.fillRect(0, 0, width, height);
 
-        if (mainCanvasMode === "init") {
-          drawInitModeContent(width, height);
-        }
+        const scale = gridScale(width, height);
+        drawGrid(width, height, scale);
+        drawVehicleHistory(width, height, scale);
+        drawVehicles(width, height, scale);
       }
 
       mainImage.addEventListener("load", drawMainCanvas);
@@ -615,7 +1048,8 @@
         new ResizeObserver(drawMainCanvas).observe(mainCanvas);
       }
 
-      drawMainCanvas();
+      setRotation(90);
+      updateRecenterButton();
       connectRctStatus();
     </script>
   </body>

@@ -17,7 +17,7 @@ import socketio
 from socketio import packet as socketio_packet
 from aiohttp import WSMsgType, web
 
-from .bridge import BridgeCache, BridgeRateTracker, extract_collision_counts
+from .bridge import BridgeCache, BridgeRateTracker, extract_collision_counts, extract_monitor_telemetry
 from .config import Settings, load_settings
 from .monitor import MonitorEventHub, safe_send
 from .monitor_protocol import (
@@ -729,23 +729,13 @@ class RaceControlTower:
             await self.handle_simulator_bridge_event(sid, args)
             return
 
-        targets: list[dict[str, Any]] = []
         for devkit in self.devkits:
             rewritten_args = rewrite_args_for_devkit(args, devkit.vehicle_id)
             if rewritten_args is None:
                 continue
             await devkit.enqueue(event, rewritten_args)
-            targets.append({"name": devkit.name, "vehicle_id": devkit.vehicle_id})
 
-        await self.broadcast_monitor(
-            envelope(
-                "frame",
-                source="simulator",
-                socketio_event=event,
-                targets=targets,
-                args=[encode_socketio_arg(arg) for arg in args],
-            )
-        )
+        await self.publish_simulator_telemetry(socketio_data_from_args(args), event)
 
     async def handle_simulator_bridge_event(self, sid: str, args: tuple[Any, ...]) -> None:
         async with self.bridge_lock:
@@ -778,7 +768,6 @@ class RaceControlTower:
             ]
         )
 
-        targets: list[dict[str, Any]] = []
         for devkit in target_devkits:
             rewritten_args = rewrite_args_for_devkit(args, devkit.vehicle_id)
             if rewritten_args is None:
@@ -787,20 +776,8 @@ class RaceControlTower:
             self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id)
             if target_vehicle_ids is not None:
                 self.record_bridge_rate(devkit)
-            targets.append({"name": devkit.name, "vehicle_id": devkit.vehicle_id})
 
-        await self.broadcast_monitor(
-            envelope(
-                "frame",
-                source="simulator",
-                socketio_event="Bridge",
-                response_vehicle_ids=sorted(target_vehicle_ids) if target_vehicle_ids is not None else None,
-                targets=targets,
-                pending_bridge_responses=self.bridge_cache.pending_response_count,
-                queued_bridge_outgoing_count=self.bridge_cache.queued_outgoing_count,
-                args=[encode_socketio_arg(arg) for arg in args],
-            )
-        )
+        await self.publish_simulator_telemetry(payload, "Bridge")
         await self.emit_queued_bridge_outgoing_if_ready()
 
     async def send_cached_incoming_bridge(self, devkit: DevKitConnection) -> None:
@@ -814,13 +791,24 @@ class RaceControlTower:
 
         await devkit.enqueue("Bridge", rewritten_args)
         self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id, cached=True)
+        await self.publish_simulator_telemetry(cached_payload, "Bridge", source="simulator-cache")
+
+    async def publish_simulator_telemetry(
+        self,
+        payload: Any,
+        socketio_event: str,
+        source: str = "simulator",
+    ) -> None:
+        telemetry = extract_monitor_telemetry(payload)
+        if not telemetry:
+            return
+
         await self.broadcast_monitor(
             envelope(
-                "frame",
-                source="simulator-cache",
-                socketio_event="Bridge",
-                targets=[{"name": devkit.name, "vehicle_id": devkit.vehicle_id}],
-                args=[encode_socketio_arg(cached_payload)],
+                "telemetry",
+                source=source,
+                socketio_event=socketio_event,
+                vehicles={str(vehicle_id): values for vehicle_id, values in sorted(telemetry.items())},
             )
         )
 

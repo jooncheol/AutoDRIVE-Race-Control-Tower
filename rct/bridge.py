@@ -20,6 +20,7 @@ OUTGOING_BRIDGE_DEFAULTS: dict[str, str] = {
 OUTGOING_BRIDGE_KEYS = frozenset(OUTGOING_BRIDGE_DEFAULTS)
 BRIDGE_RATE_WINDOW_SECONDS = 60.0
 VEHICLE_FIELD_PATTERN = re.compile(r"(?<![A-Za-z0-9])V(?P<vehicle_id>\d+)(?!\d)", re.IGNORECASE)
+ROBORACER_FIELD_PATTERN = re.compile(r"roboracer_(?P<vehicle_id>\d+)", re.IGNORECASE)
 
 
 @dataclass
@@ -143,6 +144,145 @@ def extract_collision_counts(payload: Any) -> dict[int, int]:
         vehicle_id = int(match.group("vehicle_id"))
         counts[vehicle_id] = max(counts.get(vehicle_id, count), count)
     return counts
+
+
+def extract_monitor_telemetry(payload: Any) -> dict[int, dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return {}
+
+    telemetry: dict[int, dict[str, Any]] = {}
+    topic_telemetry = _monitor_telemetry_from_topic_message(payload)
+    if topic_telemetry is not None:
+        vehicle_id, field, value = topic_telemetry
+        telemetry.setdefault(vehicle_id, {})[field] = value
+        return telemetry
+
+    for key, value in payload.items():
+        vehicle_id = _vehicle_id_from_key(key)
+        if vehicle_id is None:
+            continue
+
+        field = _monitor_field_from_key(key)
+        if field is None:
+            continue
+
+        vehicle_values = telemetry.setdefault(vehicle_id, {})
+        if field == "ips":
+            ips = _ips_value(value)
+            if ips is None:
+                continue
+            vehicle_values[field] = ips
+        elif field in {"collision_count", "lap_count"}:
+            count = _numeric_count(value)
+            if count is None:
+                continue
+            vehicle_values[field] = count
+        elif field == "speed":
+            speed = _numeric_float(value)
+            vehicle_values[field] = speed if speed is not None else value
+        else:
+            vehicle_values[field] = value
+
+    return telemetry
+
+
+def _monitor_telemetry_from_topic_message(payload: dict[Any, Any]) -> tuple[int, str, Any] | None:
+    topic = payload.get("topic", payload.get("path"))
+    if topic is None:
+        return None
+
+    vehicle_id = _vehicle_id_from_key(topic)
+    field = _monitor_field_from_key(topic)
+    if vehicle_id is None or field is None:
+        return None
+
+    value = payload.get("payload", payload.get("data", payload.get("value")))
+    if field == "ips":
+        value = _ips_value(value)
+        if value is None:
+            return None
+    elif field in {"collision_count", "lap_count"}:
+        value = _numeric_count(value)
+        if value is None:
+            return None
+    elif field == "speed":
+        numeric_value = _numeric_float(value)
+        value = numeric_value if numeric_value is not None else value
+
+    return vehicle_id, field, value
+
+
+def _vehicle_id_from_key(key: Any) -> int | None:
+    key_text = str(key)
+    match = VEHICLE_FIELD_PATTERN.search(key_text) or ROBORACER_FIELD_PATTERN.search(key_text)
+    if match is None:
+        return None
+    return int(match.group("vehicle_id"))
+
+
+def _monitor_field_from_key(key: Any) -> str | None:
+    key_text = str(key).lower()
+    normalized = re.sub(r"[^a-z0-9]+", "_", key_text).strip("_")
+
+    if "best" in normalized and "lap" in normalized and "time" in normalized:
+        return "best_lap_time"
+    if "collision" in normalized and "count" in normalized:
+        return "collision_count"
+    if "last" in normalized and "lap" in normalized and ("count" in normalized or "time" in normalized):
+        return "last_lap_count"
+    if "lap" in normalized and "count" in normalized:
+        return "lap_count"
+    if "speed" in normalized:
+        return "speed"
+    if "ips" in normalized or "position" in normalized:
+        return "ips"
+    return None
+
+
+def _numeric_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _ips_value(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        x = _numeric_float(value.get("x", value.get("X")))
+        y = _numeric_float(value.get("y", value.get("Y")))
+        z = _numeric_float(value.get("z", value.get("Z")))
+        if x is None or y is None:
+            return None
+        ips: dict[str, Any] = {"x": x, "y": y}
+        if z is not None:
+            ips["z"] = z
+        ips["raw"] = deepcopy(value)
+        return ips
+
+    if isinstance(value, (list, tuple)):
+        numbers = [_numeric_float(item) for item in value[:3]]
+    elif isinstance(value, str):
+        numbers = [_numeric_float(item) for item in re.split(r"[\s,]+", value.strip()) if item]
+    else:
+        return None
+
+    if len(numbers) < 2 or numbers[0] is None or numbers[1] is None:
+        return None
+
+    ips = {"x": numbers[0], "y": numbers[1]}
+    if len(numbers) > 2 and numbers[2] is not None:
+        ips["z"] = numbers[2]
+    ips["raw"] = value
+    return ips
 
 
 def _numeric_count(value: Any) -> int | None:
