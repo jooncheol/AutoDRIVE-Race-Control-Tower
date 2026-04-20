@@ -44,6 +44,7 @@ class Settings:
     client_queue_size: int
     ping_interval_seconds: int
     ping_timeout_seconds: int
+    monitor_ws_hz: float
     debug_engineio_messages: bool
     debug_engineio_max_chars: int
     debug_socketio_client: bool
@@ -87,6 +88,7 @@ def load_settings() -> Settings:
         client_queue_size=_get_int("RCT_CLIENT_QUEUE_SIZE", 256),
         ping_interval_seconds=_get_int("RCT_PING_INTERVAL_SECONDS", 20),
         ping_timeout_seconds=_get_int("RCT_PING_TIMEOUT_SECONDS", 20),
+        monitor_ws_hz=_get_float("RCT_MONITOR_WS_HZ", 0.0),
         debug_engineio_messages=_get_bool("RCT_DEBUG_ENGINEIO_MESSAGES", False),
         debug_engineio_max_chars=_get_int("RCT_DEBUG_ENGINEIO_MAX_CHARS", 2000),
         debug_socketio_client=_get_bool("RCT_DEBUG_SOCKETIO_CLIENT", False),

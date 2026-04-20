@@ -115,6 +115,7 @@ Environment variables:
 | `RCT_CLIENT_QUEUE_SIZE` | `256` | Outbound queue size per DevKit connection |
 | `RCT_PING_INTERVAL_SECONDS` | `20` | Socket.IO ping interval |
 | `RCT_PING_TIMEOUT_SECONDS` | `20` | Socket.IO ping timeout |
+| `RCT_MONITOR_WS_HZ` | `10.0` | Monitor WebSocket publish frequency for cached status and telemetry snapshots. Use `0` or less to publish telemetry immediately on input |
 | `RCT_DEBUG_ENGINEIO_MESSAGES` | `false` | Log raw Engine.IO message packets for compatibility debugging |
 | `RCT_DEBUG_ENGINEIO_MAX_CHARS` | `2000` | Maximum raw Engine.IO packet preview length |
 | `RCT_DEBUG_SOCKETIO_CLIENT` | `false` | Enable python-socketio client logs for DevKit connections |

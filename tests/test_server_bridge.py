@@ -29,6 +29,7 @@ def test_settings() -> Settings:
         client_queue_size=8,
         ping_interval_seconds=20,
         ping_timeout_seconds=20,
+        monitor_ws_hz=10.0,
         debug_engineio_messages=False,
         debug_engineio_max_chars=2000,
         debug_socketio_client=False,
@@ -251,6 +252,26 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delivered_to_devkit[1][0], 2)
         self.assertEqual(len(emitted_to_simulator), 2)
         self.assertEqual(tower.bridge_cache.pending_response_count, 0)
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_cached_telemetry_message_contains_latest_vehicle_values(self):
+        tower = RaceControlTower(test_settings())
+
+        await tower.publish_simulator_telemetry(
+            {"V1 Position": "1 2 0", "V2 Position": "3 4 0"},
+            "Bridge",
+        )
+        await tower.publish_simulator_telemetry(
+            {"V1 Speed": "5.5"},
+            "Bridge",
+        )
+
+        message = tower.cached_telemetry_message()
+        self.assertIsNotNone(message)
+        self.assertIn('"1"', message)
+        self.assertIn('"ips"', message)
+        self.assertIn('"speed":5.5', message)
+        self.assertIn('"2"', message)
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_event_before_connect_implicitly_connects_socketio_4_namespace(self):

@@ -318,6 +318,10 @@
                   <dd id="roboracer1Speed" class="mb-1">0</dd>
                 </div>
                 <div class="d-flex justify-content-between">
+                  <dt>Bridge Hz:</dt>
+                  <dd id="roboracer1BridgeHz" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
                   <dt>IPS:</dt>
                   <dd id="roboracer1Ips" class="mb-1">0, 0</dd>
                 </div>
@@ -374,6 +378,10 @@
                 <div class="d-flex justify-content-between">
                   <dt>Speed:</dt>
                   <dd id="roboracer2Speed" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <dt>Bridge Hz:</dt>
+                  <dd id="roboracer2BridgeHz" class="mb-1">0</dd>
                 </div>
                 <div class="d-flex justify-content-between">
                   <dt>IPS:</dt>
@@ -434,6 +442,7 @@
           statusButton: document.getElementById("roboracer1Status"),
           lapCount: document.getElementById("roboracer1LapCount"),
           speed: document.getElementById("roboracer1Speed"),
+          bridgeHz: document.getElementById("roboracer1BridgeHz"),
           ips: document.getElementById("roboracer1Ips"),
           collisions: document.getElementById("roboracer1Collisions"),
           lastLap: document.getElementById("roboracer1LastLap"),
@@ -446,6 +455,7 @@
           statusButton: document.getElementById("roboracer2Status"),
           lapCount: document.getElementById("roboracer2LapCount"),
           speed: document.getElementById("roboracer2Speed"),
+          bridgeHz: document.getElementById("roboracer2BridgeHz"),
           ips: document.getElementById("roboracer2Ips"),
           collisions: document.getElementById("roboracer2Collisions"),
           lastLap: document.getElementById("roboracer2LastLap"),
@@ -609,7 +619,12 @@
         }
 
         for (const devkit of devkits) {
-          setRoboracerStatus(Number(devkit.vehicle_id), Boolean(devkit.connected));
+          const vehicleId = Number(devkit.vehicle_id);
+          setRoboracerStatus(vehicleId, Boolean(devkit.connected));
+          const roboracer = roboracers[vehicleId];
+          if (roboracer && Object.prototype.hasOwnProperty.call(devkit, "bridge_hz")) {
+            roboracer.bridgeHz.textContent = formatNumber(devkit.bridge_hz);
+          }
         }
       }
 

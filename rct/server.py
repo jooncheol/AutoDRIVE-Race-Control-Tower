@@ -395,7 +395,10 @@ class RaceControlTower:
         self.collision_counts: dict[int, int] = {}
         self.trace_lidar_vehicle_ids: set[int] = set()
         self.monitor_vehicle_positions: dict[int, dict[str, Any]] = {}
+        self.monitor_vehicle_telemetry: dict[int, dict[str, Any]] = {}
         self.bridge_lock = asyncio.Lock()
+        self.monitor_ws_interval = 1.0 / settings.monitor_ws_hz if settings.monitor_ws_hz > 0 else 0.0
+        self._monitor_stream_task: asyncio.Task[None] | None = None
         self.sio = socketio.AsyncServer(
             async_mode="aiohttp",
             cors_allowed_origins="*",
@@ -438,6 +441,25 @@ class RaceControlTower:
     def has_simulators(self) -> bool:
         return bool(self.simulator_sids)
 
+    def start_monitor_stream(self) -> None:
+        if self.monitor_ws_interval <= 0:
+            return
+        if self._monitor_stream_task is None or self._monitor_stream_task.done():
+            self._monitor_stream_task = asyncio.create_task(
+                self.monitor_stream_loop(),
+                name="monitor-ws-stream",
+            )
+
+    async def monitor_stream_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.monitor_ws_interval)
+            if not self.monitor_hub.client_count:
+                continue
+            await self.send_monitor_now(self.status_message())
+            telemetry_message = self.cached_telemetry_message()
+            if telemetry_message is not None:
+                await self.send_monitor_now(telemetry_message)
+
     async def start(self) -> None:
         app = self.create_app()
         runner = web.AppRunner(app)
@@ -446,8 +468,11 @@ class RaceControlTower:
         await site.start()
         LOGGER.info("RCT aiohttp/socket.io server listening on %s:%s", self.settings.host, self.settings.port)
         try:
+            self.start_monitor_stream()
             await asyncio.Future()
         finally:
+            if self._monitor_stream_task is not None:
+                self._monitor_stream_task.cancel()
             await self.disconnect_all_devkits()
             await runner.cleanup()
 
@@ -680,6 +705,7 @@ class RaceControlTower:
 
         self.monitor_hub.add(ws)
         self.state.set_monitor_clients(self.monitor_hub.client_count)
+        self.start_monitor_stream()
         peer = request.remote or "unknown"
         LOGGER.info("monitor connected from %s", peer)
         await safe_send(ws, self.status_message())
@@ -818,8 +844,6 @@ class RaceControlTower:
                 continue
             await devkit.enqueue("Bridge", rewritten_args)
             self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id)
-            if target_vehicle_ids is not None:
-                self.record_bridge_rate(devkit)
 
         await self.publish_simulator_telemetry(payload, "Bridge")
         await self.emit_queued_bridge_outgoing_if_ready()
@@ -865,14 +889,16 @@ class RaceControlTower:
         if not telemetry:
             return
 
-        await self.broadcast_monitor(
-            envelope(
-                "telemetry",
-                source=source,
-                socketio_event=socketio_event,
-                vehicles={str(vehicle_id): values for vehicle_id, values in sorted(telemetry.items())},
-            )
-        )
+        for vehicle_id, values in telemetry.items():
+            cached = self.monitor_vehicle_telemetry.setdefault(vehicle_id, {})
+            cached.update(values)
+            cached["socketio_event"] = socketio_event
+            cached["source"] = source
+
+        if self.monitor_ws_interval <= 0:
+            telemetry_message = self.cached_telemetry_message()
+            if telemetry_message is not None:
+                await self.broadcast_monitor(telemetry_message)
 
     async def handle_devkit_event(self, devkit: DevKitConnection, event: str, args: tuple[Any, ...]) -> None:
         if event == "Bridge":
@@ -898,6 +924,9 @@ class RaceControlTower:
 
     async def _handle_devkit_bridge_event(self, devkit: DevKitConnection, args: tuple[Any, ...]) -> None:
         self.log_bridge_flow("devkit-to-rct", devkit.vehicle_id)
+        self.record_bridge_rate(devkit)
+        if self.monitor_ws_interval <= 0:
+            await self.publish_status()
         rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
         rewritten_payload = socketio_data_from_args(rewritten_args)
         outgoing_payload = self.bridge_cache.update_outgoing(rewritten_payload)
@@ -917,7 +946,7 @@ class RaceControlTower:
                 pending_bridge_responses=self.bridge_cache.pending_response_count,
                 queued_bridge_outgoing_count=self.bridge_cache.queued_outgoing_count,
                 args=[encode_socketio_arg(outgoing_payload)],
-            )
+            ),
         )
 
     async def emit_queued_bridge_outgoing_if_ready(self) -> None:
@@ -952,7 +981,7 @@ class RaceControlTower:
                 pending_bridge_responses=self.bridge_cache.pending_response_count,
                 queued_bridge_outgoing_count=self.bridge_cache.queued_outgoing_count,
                 args=[encode_socketio_arg(arg) for arg in outgoing_args],
-            )
+            ),
         )
 
     def record_bridge_rate(self, devkit: DevKitConnection) -> None:
@@ -1171,6 +1200,11 @@ class RaceControlTower:
         return next((devkit for devkit in self.devkits if devkit.vehicle_id == vehicle_id), None)
 
     async def broadcast_monitor(self, message: str) -> None:
+        await self.send_monitor_now(message)
+
+    async def send_monitor_now(self, message: str) -> None:
+        if message is None:
+            return
         await self.monitor_hub.broadcast(message)
         self.state.set_monitor_clients(self.monitor_hub.client_count)
 
@@ -1188,6 +1222,30 @@ class RaceControlTower:
             "trace_lidar_vehicle_ids": sorted(self.trace_lidar_vehicle_ids),
             **snapshot,
         }
+
+    def cached_telemetry_message(self) -> str | None:
+        if not self.monitor_vehicle_telemetry:
+            return None
+
+        vehicles: dict[str, dict[str, Any]] = {}
+        for vehicle_id, values in sorted(self.monitor_vehicle_telemetry.items()):
+            vehicle_values = {
+                key: value
+                for key, value in values.items()
+                if key not in {"source", "socketio_event"}
+            }
+            if vehicle_values:
+                vehicles[str(vehicle_id)] = vehicle_values
+
+        if not vehicles:
+            return None
+
+        return envelope(
+            "telemetry",
+            source="rct-cache",
+            socketio_event="cached",
+            vehicles=vehicles,
+        )
 
     async def publish_status(self) -> None:
         await self.broadcast_monitor(self.status_message())
