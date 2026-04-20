@@ -1325,9 +1325,14 @@
         mainContext.stroke();
       }
 
+      const vehicleHistoryColors = {
+        1: "#22c55e",
+        2: "#f97316",
+      };
+
       function drawVehicleHistory(width, height, scale) {
-        mainContext.fillStyle = "#22c55e";
-        for (const telemetry of Object.values(vehicleTelemetry)) {
+        for (const [vehicleId, telemetry] of Object.entries(vehicleTelemetry)) {
+          mainContext.fillStyle = vehicleHistoryColors[vehicleId] || "#22c55e";
           const history = telemetry.ipsHistory.slice(0, -1);
           for (const point of history) {
             const canvasPoint = worldToCanvas(point, width, height, scale);
