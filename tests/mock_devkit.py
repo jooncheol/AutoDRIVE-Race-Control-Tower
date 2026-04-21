@@ -36,6 +36,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default="FIFO",
         help="FIFO responds from the devkit that received the Bridge event; RR alternates between V1 and V2",
     )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--v1-only", action="store_true", help="Bind only the V1 mock devkit on --v1-port")
+    group.add_argument("--v2-only", action="store_true", help="Bind only the V2 mock devkit on --v2-port")
     parser.add_argument("--v1-port", type=int, default=DEFAULT_V1_PORT, help="Port for the V1 mock devkit")
     parser.add_argument("--v2-port", type=int, default=DEFAULT_V2_PORT, help="Port for the V2 mock devkit")
     parser.add_argument(
@@ -77,7 +80,10 @@ class MockDevKitCoordinator:
         }
 
     def _other_vehicle_id(self, vehicle_id: int) -> int:
-        return 2 if vehicle_id == 1 else 1
+        other_vehicle_id = 2 if vehicle_id == 1 else 1
+        if other_vehicle_id in self._endpoints:
+            return other_vehicle_id
+        return vehicle_id
 
     def _control_message(self, origin: int) -> dict[str, Any]:
         return {
@@ -176,9 +182,18 @@ async def main() -> None:
     )
     coordinator = MockDevKitCoordinator(args.mode)
 
+    selected_vehicle_ids = [1, 2]
+    if args.v1_only:
+        selected_vehicle_ids = [1]
+    elif args.v2_only:
+        selected_vehicle_ids = [2]
+
     tasks = [
-        asyncio.create_task(serve_endpoint(coordinator, 1, args.v1_port, args.socketio_path), name="mock-devkit-v1"),
-        asyncio.create_task(serve_endpoint(coordinator, 2, args.v2_port, args.socketio_path), name="mock-devkit-v2"),
+        asyncio.create_task(
+            serve_endpoint(coordinator, vehicle_id, args.v1_port if vehicle_id == 1 else args.v2_port, args.socketio_path),
+            name=f"mock-devkit-v{vehicle_id}",
+        )
+        for vehicle_id in selected_vehicle_ids
     ]
     try:
         await asyncio.gather(*tasks)
