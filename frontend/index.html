@@ -301,7 +301,7 @@
       <div class="container-fluid rct-shell flex-grow-1 d-flex">
         <div class="row rct-shell-row flex-grow-1 w-100">
           <div id="left-sidebar" class="col-sm-2 text-center h-100 rct-sidebar d-flex flex-column">
-            <h2 class="h6 mt-3">Roboracer 1</h2>
+            <h2 class="h6 mt-3">Roboracer A</h2>
             <div class="px-2 text-start d-flex flex-column flex-grow-1">
               <label for="roboracer1Ip" class="form-label small mb-1">Hostname (IP)</label>
               <input id="roboracer1Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
@@ -363,7 +363,7 @@
             <canvas id="mainCanvas" class="rct-main-canvas" aria-label="AutoDRIVE Race Control Tower instructions"></canvas>
           </div>
           <div id="right-sidebar" class="col-sm-2 text-center h-100 rct-sidebar d-flex flex-column">
-            <h2 class="h6 mt-3">Roboracer 2</h2>
+            <h2 class="h6 mt-3">Roboracer B</h2>
             <div class="px-2 text-start d-flex flex-column flex-grow-1">
               <label for="roboracer2Ip" class="form-label small mb-1">Hostname (IP)</label>
               <input id="roboracer2Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
@@ -509,6 +509,13 @@
 
       function monitorRestUrl(path) {
         return `/monitor/REST/latest${path}`;
+      }
+
+      function displayRoboracerLabel(vehicleId) {
+        return {
+          1: "A",
+          2: "B",
+        }[Number(vehicleId)] || String(vehicleId);
       }
 
       function setRctStatus(status) {
@@ -1203,7 +1210,7 @@
 
         const host = window.location.host || "localhost:4567";
         const instructions = [
-          "1. Enter RCT Server-reachable Hostname (IP) and Port Number for Roboracer 1 and 2, then connect.",
+          "1. Enter RCT Server-reachable Hostname (IP) and Port Number for Roboracer A and B, then connect.",
           `2. Connect AutoDRIVE Simulator to RCT (${host}) to start race control.`,
           "3. Enjoy the H2H racing action and watch the stats update in real-time!",
         ];
@@ -1415,7 +1422,7 @@
           mainContext.font = "700 13px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
           mainContext.textAlign = "center";
           mainContext.textBaseline = "middle";
-          mainContext.fillText(vehicleId, canvasPoint.x, canvasPoint.y);
+          mainContext.fillText(displayRoboracerLabel(vehicleId), canvasPoint.x, canvasPoint.y);
         }
         mainContext.textAlign = "start";
       }
