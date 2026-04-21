@@ -351,7 +351,7 @@
           </div>
           <div id="main-content" class="col-sm-8 h-100 p-0 position-relative" style="background-color: #000000;">
             <div class="rct-canvas-controls" aria-label="Map rotation">
-              <span class="rct-canvas-control-label">Roate</span>
+              <span class="rct-canvas-control-label">Rotate</span>
               <div class="btn-group btn-group-sm" role="group">
                 <button class="btn btn-outline-light" type="button" data-rotation="0">0°</button>
                 <button class="btn btn-success" type="button" data-rotation="90">90°</button>
@@ -499,6 +499,7 @@
         1: Promise.resolve(),
         2: Promise.resolve(),
       };
+      let simulatorConnected = false;
 
       function frontendWebSocketUrl() {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -520,9 +521,26 @@
         rctStatusDot.className = `status-dot status-dot-${status}`;
       }
 
+      function setCanvasInteractionEnabled(enabled) {
+        canvasControls.hidden = !enabled;
+        recenterCanvasButton.hidden = !enabled;
+        if (!enabled && canvasControlsTimer !== null) {
+          window.clearTimeout(canvasControlsTimer);
+          canvasControlsTimer = null;
+        }
+        if (!enabled) {
+          canvasControls.classList.remove("is-visible");
+          recenterCanvasButton.classList.remove("is-visible");
+        } else {
+          updateRecenterButton();
+        }
+      }
+
       function setSimulatorStatus(connected) {
+        simulatorConnected = connected;
         simulatorStatusText.textContent = connected ? "Connected" : "Disconnected";
         simulatorStatusDot.className = `status-dot status-dot-${connected ? "online" : "offline"}`;
+        setCanvasInteractionEnabled(connected);
         drawMainCanvas();
       }
 
@@ -980,6 +998,9 @@
       }
 
       function showCanvasControls() {
+        if (!simulatorConnected) {
+          return;
+        }
         canvasControls.classList.add("is-visible");
         if (!recenterCanvasButton.hidden) {
           recenterCanvasButton.classList.add("is-visible");
@@ -995,6 +1016,14 @@
       }
 
       function updateRecenterButton() {
+        if (!simulatorConnected) {
+          recenterCanvasButton.hidden = true;
+          recenterCanvasButton.disabled = true;
+          recenterCanvasButton.className = "btn btn-sm btn-outline-light rct-canvas-recenter";
+          recenterCanvasButton.classList.remove("is-visible");
+          return;
+        }
+
         const canRecenter = !(
           Math.abs(canvasView.panX) < 0.5
           && Math.abs(canvasView.panY) < 0.5
@@ -1024,6 +1053,9 @@
       mainCanvas.addEventListener("mousemove", showCanvasControls);
 
       mainCanvas.addEventListener("wheel", (event) => {
+        if (!simulatorConnected) {
+          return;
+        }
         event.preventDefault();
         showCanvasControls();
         const { height, width } = resizeMainCanvas();
@@ -1042,6 +1074,9 @@
       }, { passive: false });
 
       mainCanvas.addEventListener("mousedown", (event) => {
+        if (!simulatorConnected) {
+          return;
+        }
         if (event.button !== 0) {
           return;
         }
@@ -1054,6 +1089,9 @@
       });
 
       window.addEventListener("mousemove", (event) => {
+        if (!simulatorConnected) {
+          return;
+        }
         if (!canvasView.isPanning) {
           return;
         }
@@ -1075,6 +1113,9 @@
       window.addEventListener("blur", stopCanvasPan);
 
       recenterCanvasButton.addEventListener("click", () => {
+        if (!simulatorConnected) {
+          return;
+        }
         showCanvasControls();
         canvasView.zoom = 1;
         canvasView.panX = 0;
@@ -1085,6 +1126,9 @@
 
       for (const button of rotationButtons) {
         button.addEventListener("click", () => {
+          if (!simulatorConnected) {
+            return;
+          }
           showCanvasControls();
           setRotation(Number(button.dataset.rotation));
         });
@@ -1382,6 +1426,11 @@
         mainContext.fillStyle = "#000000";
         mainContext.fillRect(0, 0, width, height);
 
+        if (!simulatorConnected) {
+          drawInitModeContent(width, height);
+          return;
+        }
+
         const scale = gridScale(width, height);
         drawGrid(width, height, scale);
         drawLidarDots(width, height, scale);
@@ -1398,6 +1447,7 @@
 
       setRotation(90);
       updateRecenterButton();
+      setCanvasInteractionEnabled(false);
       connectRctStatus();
     </script>
   </body>
