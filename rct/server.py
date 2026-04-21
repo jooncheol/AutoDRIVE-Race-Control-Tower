@@ -398,7 +398,9 @@ class RaceControlTower:
         self.monitor_vehicle_telemetry: dict[int, dict[str, Any]] = {}
         self.bridge_lock = asyncio.Lock()
         self.monitor_ws_interval = 1.0 / settings.monitor_ws_hz if settings.monitor_ws_hz > 0 else 0.0
+        self.bridge_rate_refresh_interval = 0.25
         self._monitor_stream_task: asyncio.Task[None] | None = None
+        self._bridge_rate_refresh_task: asyncio.Task[None] | None = None
         self.sio = socketio.AsyncServer(
             async_mode="aiohttp",
             cors_allowed_origins="*",
@@ -450,6 +452,13 @@ class RaceControlTower:
                 name="monitor-ws-stream",
             )
 
+    def start_bridge_rate_refresh(self) -> None:
+        if self._bridge_rate_refresh_task is None or self._bridge_rate_refresh_task.done():
+            self._bridge_rate_refresh_task = asyncio.create_task(
+                self.bridge_rate_refresh_loop(),
+                name="bridge-rate-refresh",
+            )
+
     async def monitor_stream_loop(self) -> None:
         while True:
             await asyncio.sleep(self.monitor_ws_interval)
@@ -460,6 +469,13 @@ class RaceControlTower:
             if telemetry_message is not None:
                 await self.send_monitor_now(telemetry_message)
 
+    async def bridge_rate_refresh_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.bridge_rate_refresh_interval)
+            changed = self.refresh_bridge_rates()
+            if changed and self.monitor_hub.client_count:
+                await self.publish_status()
+
     async def start(self) -> None:
         app = self.create_app()
         runner = web.AppRunner(app)
@@ -469,10 +485,13 @@ class RaceControlTower:
         LOGGER.info("RCT aiohttp/socket.io server listening on %s:%s", self.settings.host, self.settings.port)
         try:
             self.start_monitor_stream()
+            self.start_bridge_rate_refresh()
             await asyncio.Future()
         finally:
             if self._monitor_stream_task is not None:
                 self._monitor_stream_task.cancel()
+            if self._bridge_rate_refresh_task is not None:
+                self._bridge_rate_refresh_task.cancel()
             await self.disconnect_all_devkits()
             await runner.cleanup()
 
@@ -1283,18 +1302,6 @@ class RaceControlTower:
     def status_message(self) -> str:
         return envelope("status", **self.status_payload())
 
-    def status_payload(self) -> dict[str, Any]:
-        snapshot = self.state.snapshot()
-        return {
-            "monitor_protocol": {
-                "name": "autodrive-rct-monitor",
-                "version": MONITOR_PROTOCOL_VERSION,
-            },
-            "simulator_socketio_path": f"/{SOCKETIO_PATH}/",
-            "trace_lidar_vehicle_ids": sorted(self.trace_lidar_vehicle_ids),
-            **snapshot,
-        }
-
     def cached_telemetry_message(self) -> str | None:
         if not self.monitor_vehicle_telemetry:
             return None
@@ -1321,6 +1328,38 @@ class RaceControlTower:
 
     async def publish_status(self) -> None:
         await self.broadcast_monitor(self.status_message())
+
+    def refresh_bridge_rates(self, now: float | None = None) -> bool:
+        current_snapshot = {
+            devkit_snapshot["name"]: (devkit_snapshot["bridge_hz"], devkit_snapshot["bridge_per_minute"])
+            for devkit_snapshot in self.state.snapshot()["devkits"]
+        }
+        changed = False
+        for devkit in self.devkits:
+            rates = self.bridge_rates.rates(devkit.vehicle_id, now=now)
+            next_values = (float(rates["bridge_hz"]), int(rates["bridge_per_minute"]))
+            if current_snapshot.get(devkit.name) == next_values:
+                continue
+            self.state.set_devkit_bridge_rate(
+                devkit.name,
+                bridge_hz=next_values[0],
+                bridge_per_minute=next_values[1],
+            )
+            changed = True
+        return changed
+
+    def status_payload(self) -> dict[str, Any]:
+        self.refresh_bridge_rates()
+        snapshot = self.state.snapshot()
+        return {
+            "monitor_protocol": {
+                "name": "autodrive-rct-monitor",
+                "version": MONITOR_PROTOCOL_VERSION,
+            },
+            "simulator_socketio_path": f"/{SOCKETIO_PATH}/",
+            "trace_lidar_vehicle_ids": sorted(self.trace_lidar_vehicle_ids),
+            **snapshot,
+        }
 
     def set_devkit_connected(self, devkit: DevKitConnection, connected: bool) -> None:
         devkit.connected = connected

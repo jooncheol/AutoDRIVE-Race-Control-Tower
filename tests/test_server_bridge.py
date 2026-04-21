@@ -263,6 +263,21 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
             await devkit_runner.cleanup()
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_bridge_rate_refresh_clears_stale_rates(self):
+        tower = RaceControlTower(test_settings())
+        devkit = tower.devkits[0]
+        devkit.connected = True
+        tower.state.set_devkit_connected(devkit.name, True)
+
+        tower.bridge_rates.record(devkit.vehicle_id, now=100.0)
+        tower.state.set_devkit_bridge_rate(devkit.name, 1.0, 60)
+        tower.refresh_bridge_rates(now=101.1)
+
+        snapshot = tower.state.snapshot()["devkits"][0]
+        self.assertEqual(snapshot["bridge_hz"], 0.0)
+        self.assertEqual(snapshot["bridge_per_minute"], 0)
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_devkit_bridge_to_simulator_is_single_flight(self):
         tower = RaceControlTower(test_settings())
         emitted_to_simulator = []

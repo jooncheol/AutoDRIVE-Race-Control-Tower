@@ -122,6 +122,15 @@ class BridgeRateTrackerTests(unittest.TestCase):
         self.assertAlmostEqual(rates["bridge_hz"], 2.0)
         self.assertEqual(rates["bridge_per_minute"], 120)
 
+    def test_rates_drop_to_zero_after_window_expires(self):
+        tracker = BridgeRateTracker()
+
+        tracker.record(1, now=100.0)
+        rates = tracker.rates(1, now=101.1)
+
+        self.assertEqual(rates["bridge_hz"], 0.0)
+        self.assertEqual(rates["bridge_per_minute"], 0)
+
 
 class CollisionCountTests(unittest.TestCase):
     def test_extracts_vehicle_collision_counts(self):
