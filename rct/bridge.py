@@ -22,7 +22,7 @@ OUTGOING_BRIDGE_DEFAULTS: dict[str, str] = {
     "origin": 0
 }
 OUTGOING_BRIDGE_KEYS = frozenset(OUTGOING_BRIDGE_DEFAULTS)
-BRIDGE_RATE_WINDOW_SECONDS = 60.0
+BRIDGE_RATE_WINDOW_SECONDS = 1.0
 VEHICLE_FIELD_PATTERN = re.compile(r"(?<![A-Za-z0-9])V(?P<vehicle_id>\d+)(?!\d)", re.IGNORECASE)
 ROBORACER_FIELD_PATTERN = re.compile(r"roboracer_(?P<vehicle_id>\d+)", re.IGNORECASE)
 

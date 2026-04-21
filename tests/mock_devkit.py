@@ -8,7 +8,6 @@ import asyncio
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from time import monotonic
 from typing import Any
 
 from aiohttp import web
@@ -27,7 +26,6 @@ CONTROL_MESSAGE_TEMPLATE: dict[str, str] = {
     "V2 Throttle": "0.0",
     "V2 Steering": "0.0",
 }
-RR_DEDUP_WINDOW_SECONDS = 0.02
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -67,7 +65,6 @@ class MockDevKitCoordinator:
         self._lock = asyncio.Lock()
         self._endpoints: dict[int, tuple[socketio.AsyncServer, EndpointState]] = {}
         self._rr_turn: int | None = None
-        self._rr_last_response_at = 0.0
 
     def register(self, vehicle_id: int, sio: socketio.AsyncServer, state: EndpointState) -> None:
         self._endpoints[vehicle_id] = (sio, state)
@@ -93,9 +90,8 @@ class MockDevKitCoordinator:
             _sio, state = self._endpoints[vehicle_id]
             state.sid = sid
             state.connected = True
-            if self.mode == "RR" and len(self._connected_vehicle_ids()) < 2:
-                self._rr_turn = None
-                self._rr_last_response_at = 0.0
+            if self.mode == "RR" and self._rr_turn is None and len(self._connected_vehicle_ids()) >= 1:
+                self._rr_turn = vehicle_id
 
     async def mark_disconnected(self, vehicle_id: int, sid: str) -> None:
         async with self._lock:
@@ -103,9 +99,8 @@ class MockDevKitCoordinator:
             if state.sid == sid:
                 state.sid = None
             state.connected = False
-            if self.mode == "RR":
+            if self.mode == "RR" and self._rr_turn == vehicle_id:
                 self._rr_turn = None
-                self._rr_last_response_at = 0.0
 
     async def handle_bridge(self, vehicle_id: int, sid: str, data: Any) -> None:
         async with self._lock:
@@ -113,35 +108,19 @@ class MockDevKitCoordinator:
                 await self._emit_control(vehicle_id, sid, "FIFO")
                 return
 
-            connected_ids = self._connected_vehicle_ids()
-            if len(connected_ids) < 2:
-                LOGGER.info("RR waiting for both devkits to connect before responding")
-                return
-
-            now = monotonic()
-            if now - self._rr_last_response_at < RR_DEDUP_WINDOW_SECONDS:
-                return
-
             if self._rr_turn is None:
                 self._rr_turn = vehicle_id
-
             if self._rr_turn != vehicle_id:
-                LOGGER.info(
-                    "RR skipping V%s Bridge event because turn is V%s",
-                    vehicle_id,
-                    self._rr_turn,
-                )
+                LOGGER.info("RR ignoring V%s Bridge event because turn is V%s", vehicle_id, self._rr_turn)
                 return
-
             await self._emit_control(vehicle_id, sid, "RR")
-            self._rr_last_response_at = now
             self._rr_turn = self._other_vehicle_id(vehicle_id)
 
     async def _emit_control(self, vehicle_id: int, sid: str, reason: str) -> None:
         sio, _state = self._endpoints[vehicle_id]
         payload = self._control_message(vehicle_id)
         LOGGER.info("sending Bridge control from V%s (%s): %s", vehicle_id, reason, payload)
-        await sio.emit("Bridge", deepcopy(payload), room=sid)
+        await sio._emit_internal(sid, "Bridge", deepcopy(payload), namespace="/")
 
 
 async def serve_endpoint(
