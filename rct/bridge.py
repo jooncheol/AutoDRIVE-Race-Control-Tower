@@ -19,6 +19,7 @@ OUTGOING_BRIDGE_DEFAULTS: dict[str, str] = {
     "V2 Reset": "False",
     "V2 Throttle": "0.0",
     "V2 Steering": "0.0",
+    "origin": 0
 }
 OUTGOING_BRIDGE_KEYS = frozenset(OUTGOING_BRIDGE_DEFAULTS)
 BRIDGE_RATE_WINDOW_SECONDS = 60.0

@@ -929,7 +929,9 @@ class RaceControlTower:
             await self.publish_status()
         rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
         rewritten_payload = socketio_data_from_args(rewritten_args)
+        rewritten_payload['origin'] = devkit.vehicle_id
         outgoing_payload = self.bridge_cache.update_outgoing(rewritten_payload)
+
 
         if self.bridge_cache.request_outgoing(devkit.vehicle_id):
             await self.emit_bridge_outgoing_to_simulator(devkit)
