@@ -485,6 +485,10 @@ class RaceControlTower:
         app.router.add_get("/monitor/WS/{version}", self.handle_monitor_ws)
         app.router.add_get("/monitor/REST/{version}", self.handle_monitor_rest)
         app.router.add_post(
+            "/monitor/REST/{version}/devkits/{vehicle_id}/endpoint",
+            self.handle_monitor_devkit_endpoint_command,
+        )
+        app.router.add_post(
             "/monitor/REST/{version}/devkits/{vehicle_id}/{action}",
             self.handle_monitor_devkit_command,
         )
@@ -661,6 +665,65 @@ class RaceControlTower:
             await self.disconnect_devkit(devkit)
         else:
             return web.json_response({"error": f"unsupported devkit action {action!r}"}, status=404)
+
+        await self.publish_status()
+        return web.json_response({"ok": True, "state": self.status_payload()})
+
+    async def handle_monitor_devkit_endpoint_command(self, request: web.Request) -> web.Response:
+        version_path = f"/monitor/REST/{request.match_info['version']}"
+        if not is_monitor_rest_path(version_path):
+            return web.json_response({"error": "unsupported monitor protocol version"}, status=404)
+
+        try:
+            vehicle_id = int(request.match_info["vehicle_id"])
+        except ValueError:
+            return web.json_response({"error": "vehicle_id must be an integer"}, status=400)
+
+        devkit = self._get_devkit_by_vehicle_id(vehicle_id)
+        if devkit is None:
+            return web.json_response({"error": f"unknown vehicle_id {vehicle_id}"}, status=404)
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+
+        enabled = body.get("enabled", True)
+        if not isinstance(enabled, bool):
+            return web.json_response({"error": "enabled must be a boolean"}, status=400)
+
+        host = body.get("host", body.get("hostname"))
+        port = body.get("port")
+        if host is None or port is None:
+            if enabled:
+                return web.json_response({"error": "endpoint update requires host and port"}, status=400)
+            await self.disconnect_devkit(devkit)
+            await self.publish_status()
+            return web.json_response({"ok": True, "state": self.status_payload()})
+
+        if not isinstance(host, str) or not host.strip():
+            return web.json_response({"error": "devkit host must be a non-empty string"}, status=400)
+
+        try:
+            port_number = int(port)
+        except (TypeError, ValueError):
+            return web.json_response({"error": "devkit port must be an integer"}, status=400)
+
+        if port_number < 1 or port_number > 65535:
+            return web.json_response({"error": "devkit port must be between 1 and 65535"}, status=400)
+
+        try:
+            if enabled:
+                await self.configure_devkit(devkit, host.strip(), port_number, enabled=True)
+            else:
+                await devkit.configure(host.strip(), port_number)
+                devkit.enabled = False
+                self.state.set_devkit_enabled(devkit.name, False)
+                await devkit.stop()
+        except ValueError as exc:
+            LOGGER.warning("monitor devkit endpoint update rejected: %s", exc)
+            await self.broadcast_monitor(envelope("error", source="monitor", message=str(exc)))
+            return web.json_response({"error": str(exc)}, status=400)
 
         await self.publish_status()
         return web.json_response({"ok": True, "state": self.status_payload()})

@@ -7,15 +7,17 @@ from dataclasses import replace
 
 from rct.config import Settings
 
-SOCKETIO_AVAILABLE = importlib.util.find_spec("socketio") is not None
+AIOHTTP_AVAILABLE = importlib.util.find_spec("aiohttp") is not None
+SOCKETIO_AVAILABLE = importlib.util.find_spec("socketio") is not None and AIOHTTP_AVAILABLE
+RaceControlTower = None
 
 if SOCKETIO_AVAILABLE:
     import socketio
+if AIOHTTP_AVAILABLE:
     from aiohttp import web
+    import aiohttp
 
     from rct.server import SOCKETIO_PATH, RaceControlTower
-else:
-    RaceControlTower = None
 
 
 def test_settings() -> Settings:
@@ -197,6 +199,68 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(tower.devkits[1].configured)
         self.assertEqual(tower.devkits[1].url, "ws://127.0.0.1:4568")
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    @unittest.skipIf(not AIOHTTP_AVAILABLE, "aiohttp is not installed")
+    async def test_monitor_rest_endpoint_update_applies_new_devkit_host_and_port(self):
+        new_connected = asyncio.Event()
+
+        devkit_sio = socketio.AsyncServer(async_mode="aiohttp")
+        devkit_app = web.Application()
+        devkit_sio.attach(devkit_app, socketio_path=SOCKETIO_PATH)
+
+        async def devkit_connect(sid, environ):
+            new_connected.set()
+            return True
+
+        devkit_sio.on("connect", devkit_connect)
+
+        devkit_runner = web.AppRunner(devkit_app)
+        await devkit_runner.setup()
+        devkit_site = web.TCPSite(devkit_runner, "127.0.0.1", 0)
+        await devkit_site.start()
+        devkit_port = devkit_runner.addresses[0][1]
+
+        settings = replace(
+            test_settings(),
+            devkit_urls=("ws://127.0.0.1:4568",),
+            devkit_vehicle_ids=(1,),
+            reconnect_delay_seconds=0.01,
+        )
+        tower = RaceControlTower(settings)
+        tower.simulator_sids.add("simulator")
+        tower.state.set_simulator_clients(1)
+        tower_app = tower.create_app()
+        tower_runner = web.AppRunner(tower_app)
+        await tower_runner.setup()
+        tower_site = web.TCPSite(tower_runner, "127.0.0.1", 0)
+        await tower_site.start()
+        tower_port = tower_runner.addresses[0][1]
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                response = await session.post(
+                    f"http://127.0.0.1:{tower_port}/monitor/REST/latest/devkits/1/endpoint",
+                    json={
+                        "host": "127.0.0.1",
+                        "port": devkit_port,
+                        "enabled": True,
+                    },
+                )
+                self.assertEqual(response.status, 200)
+                payload = await response.json()
+
+            await asyncio.wait_for(new_connected.wait(), timeout=3)
+
+            self.assertTrue(payload["ok"])
+            self.assertEqual(tower.devkits[0].host, "127.0.0.1")
+            self.assertEqual(tower.devkits[0].port, devkit_port)
+            self.assertTrue(tower.devkits[0].configured)
+            self.assertTrue(tower.devkits[0].enabled)
+        finally:
+            await tower.disconnect_all_devkits()
+            await tower_runner.cleanup()
+            await devkit_runner.cleanup()
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_devkit_bridge_to_simulator_is_single_flight(self):

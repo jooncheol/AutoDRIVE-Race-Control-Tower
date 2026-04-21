@@ -439,6 +439,7 @@
         1: {
           hostInput: document.getElementById("roboracer1Ip"),
           portInput: document.getElementById("roboracer1Port"),
+          endpointDirty: false,
           statusButton: document.getElementById("roboracer1Status"),
           lapCount: document.getElementById("roboracer1LapCount"),
           speed: document.getElementById("roboracer1Speed"),
@@ -452,6 +453,7 @@
         2: {
           hostInput: document.getElementById("roboracer2Ip"),
           portInput: document.getElementById("roboracer2Port"),
+          endpointDirty: false,
           statusButton: document.getElementById("roboracer2Status"),
           lapCount: document.getElementById("roboracer2LapCount"),
           speed: document.getElementById("roboracer2Speed"),
@@ -579,6 +581,37 @@
         };
       }
 
+      function markRoboracerEndpointDirty(vehicleId) {
+        const roboracer = roboracers[vehicleId];
+        if (roboracer) {
+          roboracer.endpointDirty = true;
+        }
+      }
+
+      function syncRoboracerEndpointFromState(vehicleId, devkit) {
+        const roboracer = roboracers[vehicleId];
+        if (!roboracer || !devkit) {
+          return;
+        }
+
+        const host = typeof devkit.host === "string" ? devkit.host : "";
+        const port = devkit.port;
+        if (!host || port === null || port === undefined) {
+          return;
+        }
+
+        const currentHost = roboracer.hostInput.value.trim();
+        const currentPort = Number(roboracer.portInput.value);
+        const shouldSync = !roboracer.endpointDirty || (currentHost === host && currentPort === Number(port));
+        if (!shouldSync) {
+          return;
+        }
+
+        roboracer.hostInput.value = host;
+        roboracer.portInput.value = String(port);
+        roboracer.endpointDirty = false;
+      }
+
       function sendMonitorCommand(command) {
         if (!rctSocket || rctSocket.readyState !== WebSocket.OPEN) {
           return;
@@ -605,6 +638,41 @@
         await traceLidarRequests[vehicleId];
       }
 
+      async function postRoboracerEndpoint(vehicleId, enabled) {
+        const roboracer = roboracers[vehicleId];
+        if (!roboracer) {
+          return;
+        }
+
+        const response = await fetch(monitorRestUrl(`/devkits/${vehicleId}/endpoint`), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            vehicle_id: vehicleId,
+            host: roboracer.hostInput.value.trim(),
+            port: Number(roboracer.portInput.value),
+            enabled,
+          }),
+        });
+
+        if (!response.ok) {
+          let errorText = `${response.status} ${response.statusText}`;
+          try {
+            const errorBody = await response.json();
+            if (errorBody && typeof errorBody.error === "string") {
+              errorText = errorBody.error;
+            }
+          } catch (error) {
+            // ignore JSON parse failures and keep the HTTP status text
+          }
+          throw new Error(errorText);
+        }
+
+        return response.json();
+      }
+
       function sendRoboracerConfiguration() {
         sendMonitorCommand({
           command: "configure-devkits",
@@ -616,16 +684,17 @@
       }
 
       function connectRoboracer(vehicleId) {
-        sendMonitorCommand({
-          command: "connect-devkit",
-          ...roboracerConfig(vehicleId),
+        setRoboracerStatus(vehicleId, true);
+        void postRoboracerEndpoint(vehicleId, true).catch((error) => {
+          console.warn(`Connect failed for V${vehicleId}:`, error);
+          setRoboracerStatus(vehicleId, false);
         });
       }
 
       function disconnectRoboracer(vehicleId) {
-        sendMonitorCommand({
-          command: "disconnect-devkit",
-          vehicle_id: vehicleId,
+        setRoboracerStatus(vehicleId, false);
+        void postRoboracerEndpoint(vehicleId, false).catch((error) => {
+          console.warn(`Disconnect failed for V${vehicleId}:`, error);
         });
       }
 
@@ -647,6 +716,7 @@
           const vehicleId = Number(devkit.vehicle_id);
           setRoboracerStatus(vehicleId, Boolean(devkit.connected));
           const roboracer = roboracers[vehicleId];
+          syncRoboracerEndpointFromState(vehicleId, devkit);
           if (roboracer && Object.prototype.hasOwnProperty.call(devkit, "bridge_hz")) {
             roboracer.bridgeHz.textContent = formatNumber(devkit.bridge_hz);
           }
@@ -920,7 +990,6 @@
         rctSocket = new WebSocket(frontendWebSocketUrl());
         rctSocket.addEventListener("open", () => {
           setRctStatus("online");
-          sendRoboracerConfiguration();
           console.log("RCT frontend WebSocket connected");
         });
         rctSocket.addEventListener("close", (event) => {
@@ -943,6 +1012,10 @@
 
       roboracers[1].statusButton.addEventListener("click", () => toggleRoboracer(1));
       roboracers[2].statusButton.addEventListener("click", () => toggleRoboracer(2));
+      roboracers[1].hostInput.addEventListener("input", () => markRoboracerEndpointDirty(1));
+      roboracers[1].portInput.addEventListener("input", () => markRoboracerEndpointDirty(1));
+      roboracers[2].hostInput.addEventListener("input", () => markRoboracerEndpointDirty(2));
+      roboracers[2].portInput.addEventListener("input", () => markRoboracerEndpointDirty(2));
 
       function setTraceLidar(vehicleId, enabled) {
         if (!traceLidarEnabled) {
