@@ -86,9 +86,24 @@ REST command surface:
 ```http
 POST /monitor/REST/0.1/devkits/{vehicle_id}/connect
 POST /monitor/REST/0.1/devkits/{vehicle_id}/disconnect
+POST /monitor/REST/0.1/devkits/{vehicle_id}/endpoint
 ```
 
 These commands start or stop the Socket.IO client session from RCT to the selected DevKit bridge instance. Normal operation starts DevKit sessions automatically when the simulator connects.
+
+`/endpoint` updates the runtime DevKit target and can optionally connect or disconnect the selected slot in the same request.
+
+Example:
+
+```json
+{
+  "host": "host-a.local",
+  "port": 5000,
+  "enabled": true
+}
+```
+
+When `enabled` is `true`, RCT updates the DevKit endpoint and connects it immediately. When `enabled` is `false`, RCT updates the endpoint and disconnects the DevKit immediately.
 
 ### WebSocket
 
@@ -183,7 +198,7 @@ Monitor WebSocket command surface:
 }
 ```
 
-RCT initializes DevKit bridge endpoints from `RCT_DEVKIT_URLS` and connects configured and enabled DevKit bridge instances when the simulator connects, even if no frontend is connected. The frontend sends `configure-devkits` when it connects to RCT; RCT stores those endpoints and reconnects the affected bridge instances as needed. The connected/disconnected frontend buttons send `connect-devkit` and `disconnect-devkit` commands for manual control.
+RCT initializes DevKit bridge endpoints from `RCT_DEVKIT_URLS` and connects configured and enabled DevKit bridge instances when the simulator connects, even if no frontend is connected. The frontend reads the current DevKit endpoint state from the monitor snapshot, and the connected/disconnected buttons update the selected DevKit through the REST endpoint above. Manual runtime changes now use `POST /monitor/REST/0.1/devkits/{vehicle_id}/endpoint`.
 
 ## Bridge Proxy Cache
 
@@ -209,7 +224,7 @@ When a DevKit sends a `Bridge` event, RCT rewrites that DevKit's id `1` fields b
 
 RCT also tracks which DevKit caused each outgoing simulator `Bridge` message. The next simulator `Bridge` response is stored in the incoming cache and forwarded to that DevKit after rewriting the assigned simulator vehicle id back to DevKit id `1`. If no pending DevKit response target exists, simulator `Bridge` data is forwarded to all configured and enabled DevKit bridge instances.
 
-Each DevKit state includes a rolling 60-second completed-cycle Bridge rate:
+Each DevKit state includes a rolling 1-second completed-cycle Bridge rate:
 
 - `bridge_hz`
 - `bridge_per_minute`
