@@ -58,6 +58,9 @@ fi
 if [[ -n "${RCT_LOG_BRIDGE_MAX_CHARS+x}" ]]; then
   debug_env_flags+=(-e "RCT_LOG_BRIDGE_MAX_CHARS=${RCT_LOG_BRIDGE_MAX_CHARS}")
 fi
+if [[ -n "${RCT_ENABLE_ORIGIN+x}" ]]; then
+  debug_env_flags+=(-e "RCT_ENABLE_ORIGIN=${RCT_ENABLE_ORIGIN}")
+fi
 
 docker run "${docker_flags[@]}" \
   -e "RCT_PORT=${RCT_PORT}" \

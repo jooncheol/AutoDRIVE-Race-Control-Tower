@@ -11,14 +11,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from aiohttp import web
 import socketio
 
 LOGGER = logging.getLogger("mock_simulator")
 DEFAULT_SOCKETIO_PATH = "socket.io"
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 4568
-DEFAULT_URL = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
+DEFAULT_URL = "http://127.0.0.1:4567"
 DEFAULT_SAMPLE_PATH = Path(__file__).with_name("bridge_sample.json")
 
 
@@ -31,16 +28,8 @@ def load_sample(path: Path) -> dict[str, Any]:
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Mock AutoDRIVE bridge endpoint for RCT bias checks")
-    parser.add_argument(
-        "--mode",
-        choices=("server", "client"),
-        default="client",
-        help="Run as a mock bridge server (default) or connect out as a client",
-    )
-    parser.add_argument("--host", default=DEFAULT_HOST, help="Bind host in server mode")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Bind port in server mode")
-    parser.add_argument("--url", default=DEFAULT_URL, help="Target URL in client mode")
+    parser = argparse.ArgumentParser(description="Mock AutoDRIVE simulator client for RCT bias checks")
+    parser.add_argument("--url", default=DEFAULT_URL, help="Target URL for the RCT server")
     parser.add_argument(
         "--sample",
         type=Path,

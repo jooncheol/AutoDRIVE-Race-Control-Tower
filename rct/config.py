@@ -54,6 +54,7 @@ class Settings:
     debug_bridge_flow: bool
     log_bridge_messages: bool
     log_bridge_max_chars: int
+    enable_origin: bool
 
 
 def load_settings() -> Settings:
@@ -98,4 +99,5 @@ def load_settings() -> Settings:
         debug_bridge_flow=_get_bool("RCT_DEBUG_BRIDGE_FLOW", False),
         log_bridge_messages=_get_bool("RCT_LOG_BRIDGE_MESSAGES", False),
         log_bridge_max_chars=_get_int("RCT_LOG_BRIDGE_MAX_CHARS", 20000),
+        enable_origin=_get_bool("RCT_ENABLE_ORIGIN", False),
     )

@@ -39,6 +39,7 @@ def test_settings() -> Settings:
         debug_bridge_flow=False,
         log_bridge_messages=False,
         log_bridge_max_chars=20000,
+        enable_origin=False,
     )
 
 
@@ -228,6 +229,7 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(emitted_to_simulator[0][0], "Bridge")
         self.assertEqual(emitted_to_simulator[0][1][0]["V1 Throttle"], "0.1")
         self.assertEqual(emitted_to_simulator[0][1][0]["V2 Throttle"], "0.0")
+        self.assertNotIn("origin", emitted_to_simulator[0][1][0])
         self.assertEqual(tower.bridge_cache.pending_response_count, 1)
         self.assertEqual(tower.bridge_cache.queued_outgoing_count, 1)
 
@@ -252,6 +254,29 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delivered_to_devkit[1][0], 2)
         self.assertEqual(len(emitted_to_simulator), 2)
         self.assertEqual(tower.bridge_cache.pending_response_count, 0)
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_devkit_bridge_outgoing_origin_is_opt_in(self):
+        tower = RaceControlTower(replace(test_settings(), enable_origin=True))
+        emitted_to_simulator = []
+
+        async def emit_to_simulators(event, args):
+            emitted_to_simulator.append((event, args))
+
+        async def broadcast_monitor(_message):
+            return None
+
+        tower.emit_to_simulators = emit_to_simulators
+        tower.broadcast_monitor = broadcast_monitor
+
+        devkit = tower.devkits[0]
+        devkit.configured = True
+        devkit.connected = True
+
+        await tower.handle_devkit_bridge_event(devkit, ({"V1 Throttle": "0.1"},))
+
+        self.assertEqual(len(emitted_to_simulator), 1)
+        self.assertEqual(emitted_to_simulator[0][1][0]["origin"], 1)
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_cached_telemetry_message_contains_latest_vehicle_values(self):

@@ -36,6 +36,7 @@ def test_settings(**overrides) -> Settings:
         "debug_bridge_flow": False,
         "log_bridge_messages": False,
         "log_bridge_max_chars": 20000,
+        "enable_origin": False,
     }
     values.update(overrides)
     return Settings(**values)

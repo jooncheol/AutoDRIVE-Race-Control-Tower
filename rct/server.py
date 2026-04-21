@@ -929,9 +929,10 @@ class RaceControlTower:
             await self.publish_status()
         rewritten_args = rewrite_args_for_simulator(args, devkit.vehicle_id)
         rewritten_payload = socketio_data_from_args(rewritten_args)
-        rewritten_payload['origin'] = devkit.vehicle_id
+        if self.settings.enable_origin and isinstance(rewritten_payload, dict):
+            rewritten_payload["origin"] = devkit.vehicle_id
         outgoing_payload = self.bridge_cache.update_outgoing(rewritten_payload)
-
+        outgoing_payload = self._bridge_outgoing_payload()
 
         if self.bridge_cache.request_outgoing(devkit.vehicle_id):
             await self.emit_bridge_outgoing_to_simulator(devkit)
@@ -962,7 +963,7 @@ class RaceControlTower:
         source: DevKitConnection | None,
         response_vehicle_ids: set[int] | None = None,
     ) -> None:
-        outgoing_payload = self.bridge_cache.current_outgoing()
+        outgoing_payload = self._bridge_outgoing_payload()
         outgoing_args = (outgoing_payload,)
         await self.emit_to_simulators("Bridge", outgoing_args)
         self.log_bridge_flow("rct-to-sim")
@@ -985,6 +986,12 @@ class RaceControlTower:
                 args=[encode_socketio_arg(arg) for arg in outgoing_args],
             ),
         )
+
+    def _bridge_outgoing_payload(self) -> dict[str, Any]:
+        payload = self.bridge_cache.current_outgoing()
+        if not self.settings.enable_origin:
+            payload.pop("origin", None)
+        return payload
 
     def record_bridge_rate(self, devkit: DevKitConnection) -> None:
         rates = self.bridge_rates.record(devkit.vehicle_id)
