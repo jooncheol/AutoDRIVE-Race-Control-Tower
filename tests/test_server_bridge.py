@@ -2,8 +2,10 @@
 
 import importlib.util
 import asyncio
+import json
 import unittest
 from dataclasses import replace
+from pathlib import Path
 from time import monotonic
 
 from rct.config import Settings
@@ -19,6 +21,9 @@ if AIOHTTP_AVAILABLE:
     import aiohttp
 
     from rct.server import SOCKETIO_PATH, RaceControlTower
+
+
+BRIDGE_SAMPLE_PATH = Path(__file__).with_name("bridge_sample.json")
 
 
 def test_settings() -> Settings:
@@ -52,6 +57,9 @@ def test_settings() -> Settings:
 
 
 class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
+    def load_bridge_sample(self):
+        return json.loads(BRIDGE_SAMPLE_PATH.read_text())
+
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_emit_to_simulators_avoids_socketio_4_asyncio_wait_coroutine_bug(self):
         received = []
@@ -317,6 +325,56 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["topic_selections"]["/autodrive/roboracer_1/ips"])
         self.assertTrue(follow_up_payload["topic_selections"]["/autodrive/roboracer_1/front_camera"])
         self.assertTrue(follow_up_payload["topic_selections"]["/autodrive/roboracer_1/ips"])
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_presplit_bridge_payload_filters_disabled_topics_and_keeps_enabled_inputs(self):
+        tower = RaceControlTower(test_settings())
+        payload = self.load_bridge_sample()
+
+        rewritten_payload = tower.prebuilt_devkit_bridge_payload(payload, 2)
+
+        self.assertEqual(rewritten_payload["V1 Throttle"], payload["V2 Throttle"])
+        self.assertEqual(rewritten_payload["V1 Steering"], payload["V2 Steering"])
+        self.assertEqual(rewritten_payload["V1 LIDAR Range Array"], payload["V2 LIDAR Range Array"])
+        self.assertNotEqual(rewritten_payload["V1 Front Camera Image"], payload["V2 Front Camera Image"])
+        self.assertEqual(rewritten_payload["V1 Position"], "0.0 0.0 0.0")
+        self.assertEqual(rewritten_payload["V1 Lap Count"], "0")
+        self.assertEqual(rewritten_payload["V1 Last Lap Time"], "0.0")
+        self.assertEqual(rewritten_payload["V1 Best Lap Time"], "0.0")
+        self.assertEqual(rewritten_payload["V1 Collisions"], "0")
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_presplit_bridge_payload_uses_white_front_camera_when_topic_disabled(self):
+        tower = RaceControlTower(test_settings())
+        payload = self.load_bridge_sample()
+        tower.latest_front_camera_fields = {"V2 Front Camera Image": payload["V2 Front Camera Image"]}
+
+        rewritten_payload = tower.prebuilt_devkit_bridge_payload(payload, 2)
+
+        self.assertNotEqual(rewritten_payload["V1 Front Camera Image"], payload["V2 Front Camera Image"])
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_presplit_bridge_payload_restores_original_front_camera_when_topic_enabled(self):
+        tower = RaceControlTower(test_settings())
+        payload = self.load_bridge_sample()
+        tower.state.update_topic_selections({"/autodrive/roboracer_1/front_camera": True})
+        tower.latest_front_camera_fields = {"V2 Front Camera Image": payload["V2 Front Camera Image"]}
+
+        rewritten_payload = tower.prebuilt_devkit_bridge_payload(payload, 2)
+
+        self.assertEqual(rewritten_payload["V1 Front Camera Image"], payload["V2 Front Camera Image"])
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_presplit_bridge_payload_drops_lidar_when_topic_disabled(self):
+        tower = RaceControlTower(test_settings())
+        payload = self.load_bridge_sample()
+        tower.state.update_topic_selections({"/autodrive/roboracer_1/lidar": False})
+
+        rewritten_payload = tower.prebuilt_devkit_bridge_payload(payload, 2)
+
+        self.assertEqual(rewritten_payload["V1 LIDAR Scan Rate"], "40.0")
+        self.assertTrue(isinstance(rewritten_payload["V1 LIDAR Range Array"], str))
+        self.assertTrue(isinstance(rewritten_payload["V1 LIDAR Intensity Array"], str))
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_bridge_rate_refresh_clears_stale_rates(self):

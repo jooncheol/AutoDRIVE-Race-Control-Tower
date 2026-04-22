@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import gzip
 import inspect
 import json
 import logging
@@ -93,6 +94,61 @@ TOPIC_OPTIONS: tuple[dict[str, Any], ...] = (
     {"topic": "/tf", "access": "restricted"},
 )
 RECOMMENDED_OFF_TOPICS = frozenset({"/autodrive/roboracer_1/front_camera"})
+TOPIC_TO_BRIDGE_FIELD_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "/autodrive/roboracer_1/throttle": ("Throttle",),
+    "/autodrive/roboracer_1/steering": ("Steering",),
+    "/autodrive/roboracer_1/imu": (
+        "Orientation Quaternion",
+        "Orientation Euler Angles",
+        "Linear Velocity",
+        "Angular Velocity",
+        "Linear Acceleration",
+    ),
+    "/autodrive/roboracer_1/lidar": (
+        "LIDAR Scan Rate",
+        "LIDAR Range Array",
+        "LIDAR Intensity Array",
+    ),
+    "/autodrive/roboracer_1/ips": ("Position",),
+    "/autodrive/roboracer_1/lap_count": ("Lap Count",),
+    "/autodrive/roboracer_1/lap_time": ("Lap Time",),
+    "/autodrive/roboracer_1/last_lap_time": ("Last Lap Time",),
+    "/autodrive/roboracer_1/best_lap_time": ("Best Lap Time",),
+    "/autodrive/roboracer_1/collision_count": ("Collisions",),
+}
+TOPICS_IGNORED_FOR_DEVKIT_BRIDGE = frozenset(
+    {
+        "/autodrive/roboracer_1/left_encoder",
+        "/autodrive/roboracer_1/right_encoder",
+        "/autodrive/roboracer_1/speed",
+        "/autodrive/roboracer_1/steering_command",
+        "/autodrive/roboracer_1/throttle_command",
+        "/autodrive/reset_command",
+        "/tf",
+    }
+)
+ZERO_LIDAR_RANGE_ARRAY_BASE64 = base64.b64encode(
+    gzip.compress("\n".join(["0.0"] * 1080).encode("utf-8"))
+).decode("ascii")
+EMPTY_GZIP_BASE64 = base64.b64encode(gzip.compress(b"")).decode("ascii")
+BRIDGE_FIELD_DEFAULTS_BY_SUFFIX: dict[str, str] = {
+    "Throttle": "0.0",
+    "Steering": "0.0",
+    "Position": "0.0 0.0 0.0",
+    "Orientation Quaternion": "0.0 0.0 0.0 0.0",
+    "Orientation Euler Angles": "0.0 0.0 0.0",
+    "Linear Velocity": "0.0 0.0 0.0",
+    "Angular Velocity": "0.0 0.0 0.0",
+    "Linear Acceleration": "0.0 0.0 0.0",
+    "LIDAR Scan Rate": "40.0",
+    "LIDAR Range Array": ZERO_LIDAR_RANGE_ARRAY_BASE64,
+    "LIDAR Intensity Array": EMPTY_GZIP_BASE64,
+    "Lap Count": "0",
+    "Lap Time": "0.0",
+    "Last Lap Time": "0.0",
+    "Best Lap Time": "0.0",
+    "Collisions": "0",
+}
 
 
 def configure_socketio_logging(settings: Settings) -> None:
@@ -1052,10 +1108,11 @@ class RaceControlTower:
             )
 
         self.log_bridge_flow("sim-to-rct")
-        payload = socketio_data_from_args(args)
+        raw_payload = socketio_data_from_args(args)
+        self.latest_front_camera_fields = bridge_front_camera_fields(raw_payload)
+        payload = raw_payload
         if self.settings.replace_front_camera_with_white_jpeg:
-            payload = replace_front_camera_fields(payload, WHITE_FRONT_CAMERA_JPEG_BASE64)
-        self.latest_front_camera_fields = bridge_front_camera_fields(payload)
+            payload = replace_front_camera_fields(raw_payload, WHITE_FRONT_CAMERA_JPEG_BASE64)
         if self.settings.log_bridge_field_sizes:
             LOGGER.info(
                 "bridge sizes FC=(%s, %s) LR=(%s, %s) LA=(%s, %s)",
@@ -1073,12 +1130,8 @@ class RaceControlTower:
         )
         devkit_payloads: dict[int, Any] = {}
         if self.settings.enable_presplit_bridge_cache:
-            devkit_bridge_payload = self.devkit_bridge_payload(payload)
             devkit_payloads = {
-                devkit.vehicle_id: rewrite_simulator_payload_to_devkit(
-                    devkit_bridge_payload,
-                    devkit.vehicle_id,
-                )
+                devkit.vehicle_id: self.prebuilt_devkit_bridge_payload(raw_payload, devkit.vehicle_id)
                 for devkit in self.devkits
             }
         await self.bridge_history.append(
@@ -1098,9 +1151,10 @@ class RaceControlTower:
             return False
         prebuilt_payload = record.payloads.get(devkit.vehicle_id)
         if prebuilt_payload is None:
-            rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
-            if rewritten_args is None:
+            rewritten_payload = self.prebuilt_devkit_bridge_payload(record.payload, devkit.vehicle_id)
+            if rewritten_payload is DROP_VALUE:
                 return False
+            rewritten_args = (rewritten_payload,)
         else:
             rewritten_args = (prebuilt_payload,)
         if rewritten_args is None:
@@ -1221,9 +1275,10 @@ class RaceControlTower:
         record = await self.bridge_history.wait_for_oldest_after(timestamp)
         prebuilt_payload = record.payloads.get(devkit.vehicle_id)
         if prebuilt_payload is None:
-            rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
-            if rewritten_args is None:
+            rewritten_payload = self.prebuilt_devkit_bridge_payload(record.payload, devkit.vehicle_id)
+            if rewritten_payload is DROP_VALUE:
                 return
+            rewritten_args = (rewritten_payload,)
         else:
             rewritten_args = (prebuilt_payload,)
         if rewritten_args is None:
@@ -1231,13 +1286,43 @@ class RaceControlTower:
         await devkit.enqueue("Bridge", rewritten_args)
         self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id)
 
-    def devkit_bridge_payload(self, payload: Any) -> Any:
-        if not isinstance(payload, dict) or not self.latest_front_camera_fields:
+    def prebuilt_devkit_bridge_payload(self, payload: Any, vehicle_id: int) -> Any:
+        filtered_payload = self.filter_simulator_bridge_payload_for_devkit(payload, vehicle_id)
+        return rewrite_simulator_payload_to_devkit(filtered_payload, vehicle_id)
+
+    def filter_simulator_bridge_payload_for_devkit(self, payload: Any, vehicle_id: int) -> Any:
+        if not isinstance(payload, dict):
             return payload
 
+        vehicle_prefix = f"V{vehicle_id} "
         merged_payload = dict(payload)
-        merged_payload.update(self.latest_front_camera_fields)
-        return merged_payload
+        for key, value in self.latest_front_camera_fields.items():
+            if key.startswith(vehicle_prefix):
+                merged_payload[key] = value
+
+        topic_selections = self.resolved_topic_selections()
+        default_selections = default_topic_selections()
+        filtered_payload = dict(merged_payload)
+
+        front_camera_topic = "/autodrive/roboracer_1/front_camera"
+        front_camera_key = f"{vehicle_prefix}Front Camera Image"
+        if front_camera_key in merged_payload:
+            if topic_selections.get(front_camera_topic, default_selections.get(front_camera_topic, False)):
+                filtered_payload[front_camera_key] = merged_payload[front_camera_key]
+            else:
+                filtered_payload[front_camera_key] = WHITE_FRONT_CAMERA_JPEG_BASE64
+
+        for topic, suffixes in TOPIC_TO_BRIDGE_FIELD_SUFFIXES.items():
+            if topic_selections.get(topic, default_selections.get(topic, False)):
+                continue
+            for suffix in suffixes:
+                default_value = BRIDGE_FIELD_DEFAULTS_BY_SUFFIX.get(suffix)
+                if default_value is None:
+                    filtered_payload.pop(f"{vehicle_prefix}{suffix}", None)
+                    continue
+                filtered_payload[f"{vehicle_prefix}{suffix}"] = default_value
+
+        return filtered_payload
 
     def record_bridge_rate(self, devkit: DevKitConnection) -> None:
         rates = self.bridge_rates.record(devkit.vehicle_id)
@@ -1527,13 +1612,15 @@ class RaceControlTower:
         }
 
     def topic_options_payload(self) -> list[dict[str, Any]]:
-        selections = self.state.topic_selections()
+        selections = self.resolved_topic_selections()
         return [
             {
                 **option,
                 "checked": selections.get(option["topic"], default_topic_selections()[option["topic"]]),
                 "mutable": option["access"] == "restricted" or option["topic"] in RECOMMENDED_OFF_TOPICS,
                 "recommended_off": option["topic"] in RECOMMENDED_OFF_TOPICS,
+                "bridge_filterable": option["topic"] in TOPIC_TO_BRIDGE_FIELD_SUFFIXES or option["topic"] == "/autodrive/roboracer_1/front_camera",
+                "bridge_ignored": option["topic"] in TOPICS_IGNORED_FOR_DEVKIT_BRIDGE,
             }
             for option in TOPIC_OPTIONS
         ]
@@ -1548,6 +1635,11 @@ class RaceControlTower:
                 raise ValueError(f"topic {topic!r} enabled flag must be a boolean")
             validated_topic_selections[topic] = enabled
         return validated_topic_selections
+
+    def resolved_topic_selections(self) -> dict[str, bool]:
+        selections = default_topic_selections()
+        selections.update(self.state.topic_selections())
+        return selections
 
     def set_devkit_connected(self, devkit: DevKitConnection, connected: bool) -> None:
         devkit.connected = connected
