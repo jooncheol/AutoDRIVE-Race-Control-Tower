@@ -179,6 +179,16 @@ def omitted_bridge_value(value: Any) -> str:
     return f"<omitted len={size}>"
 
 
+def bridge_field_size(payload: Any, key: str) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    try:
+        return len(value)
+    except TypeError:
+        return None
+
+
 def color_arrow(text: str, color: str) -> str:
     return f"{color}{text}{ANSI_RESET}"
 
@@ -923,6 +933,16 @@ class RaceControlTower:
 
         self.log_bridge_flow("sim-to-rct")
         payload = socketio_data_from_args(args)
+        if False:
+            LOGGER.info(
+                "bridge sizes FC=(%s, %s) LR=(%s, %s) LA=(%s, %s)",
+                bridge_field_size(payload, "V1 Front Camera Image"),
+                bridge_field_size(payload, "V2 Front Camera Image"),
+                bridge_field_size(payload, "V1 LIDAR Range Array"),
+                bridge_field_size(payload, "V2 LIDAR Range Array"),
+                bridge_field_size(payload, "V1 LIDAR Intensity Array"),
+                bridge_field_size(payload, "V2 LIDAR Intensity Array"),
+            )
         self.log_collision_count_changes(payload)
         await self.bridge_history.append(payload)
         await self.publish_simulator_telemetry(payload, "Bridge")
