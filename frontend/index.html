@@ -114,6 +114,40 @@
         font-size: 1.5rem;
       }
 
+      .rct-settings-button {
+        background: transparent;
+        border: 0;
+        width: 2.25rem;
+        height: 2.25rem;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      .rct-settings-button:hover,
+      .rct-settings-button:focus,
+      .rct-settings-button:active {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+      }
+
+      .rct-settings-button .bi {
+        font-size: 1.5rem;
+        line-height: 1;
+      }
+
+      .rct-settings-dialog .modal-content {
+        min-height: 30rem;
+      }
+
+      .rct-settings-dialog .modal-body {
+        min-height: 24rem;
+      }
+
+      .rct-settings-dialog .tab-content {
+        min-height: 20rem;
+      }
+
       html,
       body {
         height: 100%;
@@ -249,38 +283,6 @@
   </head>
   <body class="d-flex flex-column">
     <header data-bs-theme="dark">
-      <div class="collapse rct-navbar text-white" id="navbarHeader">
-        <div class="container">
-          <div class="row">
-            <div class="col-sm-8 col-md-7 py-4">
-              <h4>About</h4>
-              <p class="text-body-secondary">
-                AutoDRIVE Race Control Tower (RCT) is a WebSocket race-control proxy for the AutoDRIVE RoboRacer simulator. It accepts simulator traffic, forwards vehicle data to configured DevKit bridge instances, rewrites vehicle identifiers for each assigned RoboRacer, and streams connection status back to this browser dashboard.
-              </p>
-            </div>
-            <div class="col-sm-4 offset-md-1 py-4">
-              <h4>Contact</h4>
-              <ul class="list-unstyled">
-                <li>
-                  <a href="https://autodrive-ecosystem.github.io/" class="text-white"><i class="bi bi-house"></i> AutoDRIVE Ecosystem</a>
-                </li>
-                <li>
-                  <a href="https://github.com/Tinker-Twins/AutoDRIVE/tree/AutoDRIVE-Simulator" class="text-white" target="_blank"><i class="bi bi-github"></i>
- AutoDRIVE Simulator</a>
-                </li>
-                <li>
-                  <a href="https://github.com/AutoDRIVE-Ecosystem/AutoDRIVE-RoboRacer-Sim-Racing" class="text-white" target="_blank"><i class="bi bi-github"></i>
- AutoDRIVE DevKit</a>
-                </li>
-                <li>
-                  <a href="https://github.com/jooncheol/autodrive-race-control-tower" class="text-white" target="_blank"><i class="bi bi-github"></i>
- AutoDRIVE Race Control Tower</a>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
       <div class="navbar navbar-dark rct-navbar shadow-sm">
         <div class="container position-relative">
           <a href="#" class="navbar-brand d-flex align-items-center py-0">
@@ -291,12 +293,60 @@
             >
           </a>
           <strong class="position-absolute rct-navbar-title text-white">Race Control Tower</strong>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarHeader" aria-controls="navbarHeader" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
+          <button class="btn d-inline-flex align-items-center justify-content-center rct-settings-button" type="button" data-bs-toggle="modal" data-bs-target="#settingsDialog" aria-label="Open settings">
+            <i class="bi bi-gear"></i>
           </button>
         </div>
       </div>
     </header>
+    <div class="modal fade" id="settingsDialog" tabindex="-1" aria-labelledby="settingsDialogLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg rct-settings-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h1 class="modal-title fs-5" id="settingsDialogLabel">Settings</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <ul class="nav nav-tabs" id="settingsTabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="topics-tab" data-bs-toggle="tab" data-bs-target="#topics-tab-pane" type="button" role="tab" aria-controls="topics-tab-pane" aria-selected="true">Topics</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="about-tab" data-bs-toggle="tab" data-bs-target="#about-tab-pane" type="button" role="tab" aria-controls="about-tab-pane" aria-selected="false">About</button>
+              </li>
+            </ul>
+            <div class="tab-content pt-3" id="settingsTabContent">
+              <div class="tab-pane fade show active" id="topics-tab-pane" role="tabpanel" aria-labelledby="topics-tab" tabindex="0"></div>
+              <div class="tab-pane fade" id="about-tab-pane" role="tabpanel" aria-labelledby="about-tab" tabindex="0">
+                <h4>About</h4>
+                <p class="text-body-secondary">
+                  AutoDRIVE Race Control Tower (RCT) is a WebSocket race-control proxy for the AutoDRIVE RoboRacer simulator. It accepts simulator traffic, forwards vehicle data to configured DevKit bridge instances, rewrites vehicle identifiers for each assigned RoboRacer, and streams connection status back to this browser dashboard.
+                </p>
+                <h4>Contact</h4>
+                <ul class="list-unstyled mb-0">
+                  <li>
+                    <a href="https://autodrive-ecosystem.github.io/" target="_blank"><i class="bi bi-house"></i> AutoDRIVE Ecosystem</a>
+                  </li>
+                  <li>
+                    <a href="https://github.com/Tinker-Twins/AutoDRIVE/tree/AutoDRIVE-Simulator" target="_blank"><i class="bi bi-github"></i> AutoDRIVE Simulator</a>
+                  </li>
+                  <li>
+                    <a href="https://github.com/AutoDRIVE-Ecosystem/AutoDRIVE-RoboRacer-Sim-Racing" target="_blank"><i class="bi bi-github"></i> AutoDRIVE DevKit</a>
+                  </li>
+                  <li>
+                    <a href="https://github.com/jooncheol/autodrive-race-control-tower" target="_blank"><i class="bi bi-github"></i> AutoDRIVE Race Control Tower</a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Apply</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <main class="flex-grow-1 d-flex">
       <div class="container-fluid rct-shell flex-grow-1 d-flex">
         <div class="row rct-shell-row flex-grow-1 w-100">
