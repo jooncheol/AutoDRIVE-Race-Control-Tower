@@ -146,6 +146,7 @@
 
       .rct-settings-dialog .modal-body {
         min-height: 24rem;
+	padding-top: 0;
       }
 
       .rct-settings-dialog .tab-content {
@@ -154,6 +155,42 @@
 
       .rct-settings-dialog .tab-pane > :first-child {
         margin-top: 0;
+      }
+
+      .rct-topics-description {
+        color: #6c757d;
+        font-size: 0.95rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .rct-topics-list {
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        max-height: 18.5rem;
+        overflow: auto;
+      }
+
+      .rct-topics-list table {
+        margin-bottom: 0;
+      }
+
+      .rct-topics-list thead th {
+        background-color: #f8f9fa;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+
+      .rct-topics-checkbox-cell {
+        width: 1rem;
+      }
+
+      .rct-topics-topic-cell {
+        padding-left: 0.3125rem;
+      }
+
+      .rct-topics-status {
+        white-space: nowrap;
       }
 
       html,
@@ -323,7 +360,27 @@
           </div>
           <div class="modal-body">
             <div class="tab-content" id="settingsTabContent">
-              <div class="tab-pane fade show active" id="topics-tab-pane" role="tabpanel" aria-labelledby="topics-tab" tabindex="0"></div>
+              <div class="tab-pane fade show active" id="topics-tab-pane" role="tabpanel" aria-labelledby="topics-tab" tabindex="0">
+                <p class="rct-topics-description">
+		  Select which topics RCT forwards to the cars. Only checked topics are delivered. Restricted topics are not allowed during racing, but they can be enabled for testing or practice. Front Camera can significantly affect performance, so leaving it unchecked is recommended unless you specifically need it.
+                </p>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" value="" id="allRestrictedTopics">
+                  <label class="form-check-label" for="allRestrictedTopics">All Restricted</label>
+                </div>
+                <div class="rct-topics-list">
+                  <table class="table table-sm align-middle">
+                    <thead>
+                      <tr>
+                        <th class="rct-topics-checkbox-cell"></th>
+                        <th>Topic</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="topicsTableBody"></tbody>
+                  </table>
+                </div>
+              </div>
               <div class="tab-pane fade" id="about-tab-pane" role="tabpanel" aria-labelledby="about-tab" tabindex="0">
                 <p class="text-body-secondary">
                   AutoDRIVE Race Control Tower (RCT) is a WebSocket race-control proxy for the AutoDRIVE RoboRacer simulator. It accepts simulator traffic, forwards vehicle data to configured DevKit bridge instances, rewrites vehicle identifiers for each assigned RoboRacer, and streams connection status back to this browser dashboard.
@@ -347,7 +404,7 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Apply</button>
+            <button id="settingsApplyButton" type="button" class="btn btn-primary" data-bs-dismiss="modal">Apply</button>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
@@ -491,6 +548,10 @@
       const rctStatusText = document.getElementById("rctStatusText");
       const simulatorStatusDot = document.getElementById("simulatorStatusDot");
       const simulatorStatusText = document.getElementById("simulatorStatusText");
+      const settingsApplyButton = document.getElementById("settingsApplyButton");
+      const allRestrictedTopicsCheckbox = document.getElementById("allRestrictedTopics");
+      const topicsTableBody = document.getElementById("topicsTableBody");
+      const settingsTabButtons = Array.from(document.querySelectorAll("#settingsTabs [data-bs-toggle='tab']"));
       const roboracers = {
         1: {
           hostInput: document.getElementById("roboracer1Ip"),
@@ -557,6 +618,26 @@
         1: Promise.resolve(),
         2: Promise.resolve(),
       };
+      const topicOptions = [
+        { topic: "/autodrive/roboracer_1/best_lap_time", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/collision_count", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/front_camera", access: "input" },
+        { topic: "/autodrive/roboracer_1/imu", access: "input" },
+        { topic: "/autodrive/roboracer_1/ips", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/lap_count", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/lap_time", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/last_lap_time", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/left_encoder", access: "input" },
+        { topic: "/autodrive/roboracer_1/lidar", access: "input" },
+        { topic: "/autodrive/roboracer_1/right_encoder", access: "input" },
+        { topic: "/autodrive/roboracer_1/speed", access: "restricted" },
+        { topic: "/autodrive/roboracer_1/steering", access: "input" },
+        { topic: "/autodrive/roboracer_1/steering_command", access: "output" },
+        { topic: "/autodrive/roboracer_1/throttle", access: "input" },
+        { topic: "/autodrive/roboracer_1/throttle_command", access: "output" },
+        { topic: "/autodrive/reset_command", access: "restricted" },
+        { topic: "/tf", access: "restricted" },
+      ];
       let simulatorConnected = false;
 
       function frontendWebSocketUrl() {
@@ -584,6 +665,57 @@
         };
         rctStatusText.textContent = labels[status];
         rctStatusDot.className = `status-dot status-dot-${status}`;
+      }
+
+      function topicAccessLabel(access) {
+        if (access === "restricted") {
+          return "⚠ Restricted";
+        }
+        if (access === "input") {
+          return "↓ Input";
+        }
+        return "↑ Output";
+      }
+
+      function updateAllRestrictedCheckboxState() {
+        const restrictedCheckboxes = Array.from(document.querySelectorAll(".topic-checkbox[data-access='restricted']"));
+        const checkedCount = restrictedCheckboxes.filter((checkbox) => checkbox.checked).length;
+        allRestrictedTopicsCheckbox.checked = restrictedCheckboxes.length > 0 && checkedCount === restrictedCheckboxes.length;
+        allRestrictedTopicsCheckbox.indeterminate = checkedCount > 0 && checkedCount < restrictedCheckboxes.length;
+      }
+
+      function renderTopicOptions() {
+        topicsTableBody.innerHTML = "";
+        for (const [index, option] of topicOptions.entries()) {
+          const row = document.createElement("tr");
+          const checkboxEnabled = option.access === "restricted" || option.topic === "/autodrive/roboracer_1/front_camera";
+          row.innerHTML = `
+            <td class="rct-topics-checkbox-cell">
+              <input
+                class="form-check-input topic-checkbox"
+                type="checkbox"
+                id="topic-option-${index}"
+                data-access="${option.access}"
+                ${checkboxEnabled ? "" : "disabled checked"}
+              >
+            </td>
+            <td class="rct-topics-topic-cell">
+              <label class="form-check-label" for="topic-option-${index}">${option.topic}</label>
+            </td>
+            <td class="rct-topics-status">${topicAccessLabel(option.access)}</td>
+          `;
+          topicsTableBody.appendChild(row);
+        }
+
+        for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-access='restricted']")) {
+          checkbox.addEventListener("change", updateAllRestrictedCheckboxState);
+        }
+        updateAllRestrictedCheckboxState();
+      }
+
+      function updateSettingsApplyState() {
+        const topicsTabButton = document.getElementById("topics-tab");
+        settingsApplyButton.disabled = !topicsTabButton.classList.contains("active");
       }
 
       function setCanvasInteractionEnabled(enabled) {
@@ -1592,7 +1724,18 @@
       if ("ResizeObserver" in window) {
         new ResizeObserver(drawMainCanvas).observe(mainCanvas);
       }
+      allRestrictedTopicsCheckbox.addEventListener("change", () => {
+        for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-access='restricted']")) {
+          checkbox.checked = allRestrictedTopicsCheckbox.checked;
+        }
+        updateAllRestrictedCheckboxState();
+      });
+      settingsTabButtons.forEach((button) => {
+        button.addEventListener("shown.bs.tab", updateSettingsApplyState);
+      });
 
+      renderTopicOptions();
+      updateSettingsApplyState();
       setRotation(90);
       updateRecenterButton();
       setCanvasInteractionEnabled(false);
