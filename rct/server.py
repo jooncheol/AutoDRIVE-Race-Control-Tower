@@ -294,6 +294,7 @@ class DevKitConnection:
     configured: bool = False
     enabled: bool = True
     connected: bool = False
+    awaiting_initial_bridge: bool = False
     _run_task: asyncio.Task[None] | None = None
     _send_task: asyncio.Task[None] | None = None
     _control_task: asyncio.Task[None] | None = None
@@ -312,7 +313,7 @@ class DevKitConnection:
         async def on_connect() -> None:
             self.tower.set_devkit_connected(self, True)
             LOGGER.info("%s connected to %s", self.name, self.url)
-            await self.tower.send_cached_incoming_bridge(self)
+            self.awaiting_initial_bridge = not await self.tower.send_cached_incoming_bridge(self)
             await self.tower.publish_status()
 
         async def on_disconnect(*_: Any) -> None:
@@ -386,6 +387,7 @@ class DevKitConnection:
         self._run_task = None
         self._send_task = None
         self._control_task = None
+        self.awaiting_initial_bridge = False
         if self.connected:
             self.tower.set_devkit_connected(self, False)
             await self.tower.publish_status()
@@ -1009,25 +1011,30 @@ class RaceControlTower:
             bridge_history_payload_value,
             payloads=devkit_payloads,
         )
+        for devkit in self.devkits:
+            if not devkit.connected or not devkit.awaiting_initial_bridge:
+                continue
+            devkit.awaiting_initial_bridge = not await self.send_cached_incoming_bridge(devkit)
         await self.publish_simulator_telemetry(payload, "Bridge")
         await self.emit_control_cache_to_simulator()
 
-    async def send_cached_incoming_bridge(self, devkit: DevKitConnection) -> None:
+    async def send_cached_incoming_bridge(self, devkit: DevKitConnection) -> bool:
         record = await self.bridge_history.latest()
         if record is None:
-            return
+            return False
         prebuilt_payload = record.payloads.get(devkit.vehicle_id)
         if prebuilt_payload is None:
             rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
             if rewritten_args is None:
-                return
+                return False
         else:
             rewritten_args = (prebuilt_payload,)
         if rewritten_args is None:
-            return
+            return False
 
         await devkit.enqueue("Bridge", rewritten_args)
         self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id, cached=True)
+        return True
 
     async def publish_simulator_telemetry(
         self,

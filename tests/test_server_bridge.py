@@ -112,6 +112,44 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    async def test_first_simulator_bridge_replays_to_devkit_that_connected_before_cache_existed(self):
+        tower = RaceControlTower(test_settings())
+        devkit = tower.devkits[1]
+        delivered = []
+
+        async def enqueue(event, args):
+            delivered.append((event, args))
+
+        async def publish_status():
+            return None
+
+        async def publish_simulator_telemetry(_payload, _event, source="simulator"):
+            return None
+
+        async def emit_control_cache_to_simulator():
+            return None
+
+        devkit.enqueue = enqueue
+        tower.publish_status = publish_status
+        tower.publish_simulator_telemetry = publish_simulator_telemetry
+        tower.emit_control_cache_to_simulator = emit_control_cache_to_simulator
+
+        devkit.connected = True
+        devkit.awaiting_initial_bridge = not await tower.send_cached_incoming_bridge(devkit)
+        self.assertTrue(devkit.awaiting_initial_bridge)
+
+        await tower.handle_simulator_bridge_event(
+            "simulator",
+            ({"V1 Position": "1 0 0", "V2 Position": "2 0 0", "V2 Throttle": "0.2"},),
+        )
+
+        self.assertFalse(devkit.awaiting_initial_bridge)
+        self.assertEqual(
+            delivered,
+            [("Bridge", ({"V1 Position": "2 0 0", "V1 Throttle": "0.2"},))],
+        )
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_socketio_4_default_namespace_connection_uses_engineio_state(self):
         tower = RaceControlTower(test_settings())
         devkit = tower.devkits[0]
