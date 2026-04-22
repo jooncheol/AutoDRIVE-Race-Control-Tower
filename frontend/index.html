@@ -546,9 +546,13 @@
       }
 
       function setSimulatorStatus(connected) {
+        const wasConnected = simulatorConnected;
         simulatorConnected = connected;
         simulatorStatusText.textContent = connected ? "Connected" : "Disconnected";
         simulatorStatusDot.className = `status-dot status-dot-${connected ? "online" : "offline"}`;
+        if (connected && !wasConnected) {
+          resetVehicleTraces();
+        }
         setCanvasInteractionEnabled(connected);
         drawMainCanvas();
       }
@@ -745,6 +749,14 @@
         for (const vehicleId of Object.keys(roboracers)) {
           setTraceLidarButtonState(Number(vehicleId), traced.has(Number(vehicleId)));
         }
+      }
+
+      function resetVehicleTraces() {
+        for (const telemetry of Object.values(vehicleTelemetry)) {
+          telemetry.ipsHistory = [];
+          telemetry.lidarDots = [];
+        }
+        drawMainCanvas();
       }
 
       function formatNumber(value, fractionDigits = 2) {
