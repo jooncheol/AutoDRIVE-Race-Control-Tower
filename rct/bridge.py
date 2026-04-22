@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 import base64
@@ -27,73 +28,98 @@ VEHICLE_FIELD_PATTERN = re.compile(r"(?<![A-Za-z0-9])V(?P<vehicle_id>\d+)(?!\d)"
 ROBORACER_FIELD_PATTERN = re.compile(r"roboracer_(?P<vehicle_id>\d+)", re.IGNORECASE)
 
 
-@dataclass
-class BridgeCache:
-    pending_limit: int = 1024
-    incoming_cache: dict[str, Any] = field(default_factory=dict)
-    outgoing_cache: dict[str, Any] = field(default_factory=lambda: dict(OUTGOING_BRIDGE_DEFAULTS))
-    _inflight_vehicle_ids: set[int] = field(init=False)
-    _dirty_vehicle_ids: set[int] = field(init=False)
+@dataclass(frozen=True)
+class TimestampedBridgePayload:
+    timestamp: float
+    payload: Any
 
-    def __post_init__(self) -> None:
-        self._inflight_vehicle_ids = set()
-        self._dirty_vehicle_ids = set()
 
-    def update_incoming(self, payload: Any) -> dict[str, Any] | None:
-        if not isinstance(payload, dict):
-            return None
+class BridgeHistory:
+    def __init__(self, retention_seconds: float) -> None:
+        self.retention_seconds = retention_seconds
+        self._records: deque[TimestampedBridgePayload] = deque()
+        self._condition = asyncio.Condition()
 
-        self.incoming_cache = deepcopy(payload)
-        return deepcopy(self.incoming_cache)
+    async def append(self, payload: Any, now: float | None = None) -> TimestampedBridgePayload:
+        timestamp = monotonic() if now is None else now
+        record = TimestampedBridgePayload(timestamp=timestamp, payload=deepcopy(payload))
+        async with self._condition:
+            self._prune_locked(timestamp)
+            self._records.append(record)
+            self._condition.notify_all()
+        return self._copy_record(record)
 
-    def current_incoming(self) -> dict[str, Any] | None:
-        if not self.incoming_cache:
-            return None
-        return deepcopy(self.incoming_cache)
+    async def latest(self, now: float | None = None) -> TimestampedBridgePayload | None:
+        async with self._condition:
+            self._prune_locked(monotonic() if now is None else now)
+            if not self._records:
+                return None
+            return self._copy_record(self._records[-1])
 
-    def update_outgoing(self, payload: Any) -> dict[str, Any]:
-        if isinstance(payload, dict):
-            for key, value in payload.items():
-                if key in OUTGOING_BRIDGE_KEYS:
-                    self.outgoing_cache[key] = value
+    async def oldest_after(
+        self,
+        after_timestamp: float,
+        now: float | None = None,
+    ) -> TimestampedBridgePayload | None:
+        async with self._condition:
+            self._prune_locked(monotonic() if now is None else now)
+            for record in self._records:
+                if record.timestamp > after_timestamp:
+                    return self._copy_record(record)
+        return None
 
-        return deepcopy(self.outgoing_cache)
+    async def wait_for_oldest_after(self, after_timestamp: float) -> TimestampedBridgePayload:
+        async with self._condition:
+            while True:
+                self._prune_locked(monotonic())
+                for record in self._records:
+                    if record.timestamp > after_timestamp:
+                        return self._copy_record(record)
+                await self._condition.wait()
 
-    def current_outgoing(self) -> dict[str, Any]:
-        return deepcopy(self.outgoing_cache)
+    def _prune_locked(self, now: float) -> None:
+        cutoff = now - self.retention_seconds
+        while self._records and self._records[0].timestamp < cutoff:
+            self._records.popleft()
 
-    def request_outgoing(self, vehicle_id: int) -> bool:
-        if self._inflight_vehicle_ids:
-            self._dirty_vehicle_ids.add(vehicle_id)
-            return False
+    def _copy_record(self, record: TimestampedBridgePayload) -> TimestampedBridgePayload:
+        return TimestampedBridgePayload(record.timestamp, deepcopy(record.payload))
 
-        self._inflight_vehicle_ids = {vehicle_id}
-        return True
 
-    def complete_inflight(self) -> set[int] | None:
-        if not self._inflight_vehicle_ids:
-            return None
+class ControlCache:
+    def __init__(self) -> None:
+        self._payload = dict(OUTGOING_BRIDGE_DEFAULTS)
+        self._timestamp = 0.0
+        self._lock = asyncio.Lock()
 
-        vehicle_ids = set(self._inflight_vehicle_ids)
-        self._inflight_vehicle_ids.clear()
-        return vehicle_ids
+    async def merge(
+        self,
+        payload: Any,
+        timestamp: float,
+        *,
+        origin_vehicle_id: int | None = None,
+        include_origin: bool = False,
+    ) -> tuple[float, dict[str, Any]]:
+        async with self._lock:
+            if isinstance(payload, dict):
+                for key, value in payload.items():
+                    if key in OUTGOING_BRIDGE_KEYS:
+                        self._payload[key] = value
+            self._timestamp = max(self._timestamp, timestamp)
+            self._payload["origin"] = origin_vehicle_id if include_origin and origin_vehicle_id is not None else 0
+            snapshot = deepcopy(self._payload)
+            snapshot_timestamp = self._timestamp
+        if not include_origin:
+            snapshot.pop("origin", None)
+        return snapshot_timestamp, snapshot
 
-    def start_queued_outgoing(self) -> set[int]:
-        if self._inflight_vehicle_ids or not self._dirty_vehicle_ids:
-            return set()
-
-        vehicle_ids = set(self._dirty_vehicle_ids)
-        self._dirty_vehicle_ids.clear()
-        self._inflight_vehicle_ids = set(vehicle_ids)
-        return vehicle_ids
-
-    @property
-    def pending_response_count(self) -> int:
-        return len(self._inflight_vehicle_ids)
-
-    @property
-    def queued_outgoing_count(self) -> int:
-        return len(self._dirty_vehicle_ids)
+    async def snapshot(self, *, include_origin: bool = False) -> tuple[float, dict[str, Any]]:
+        async with self._lock:
+            snapshot = deepcopy(self._payload)
+            snapshot_timestamp = self._timestamp
+        if not include_origin:
+            snapshot.pop("origin", None)
+        return snapshot_timestamp, snapshot
 
 
 class BridgeRateTracker:

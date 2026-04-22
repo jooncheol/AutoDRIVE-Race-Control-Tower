@@ -21,6 +21,7 @@ def test_settings(**overrides) -> Settings:
         "port": 0,
         "devkit_urls": (),
         "devkit_vehicle_ids": (),
+        "bridge_history_seconds": 5.0,
         "reconnect_delay_seconds": 0.1,
         "max_message_size": 16 * 1024 * 1024,
         "client_queue_size": 8,

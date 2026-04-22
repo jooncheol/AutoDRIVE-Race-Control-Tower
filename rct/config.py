@@ -39,6 +39,7 @@ class Settings:
     port: int
     devkit_urls: tuple[str, ...]
     devkit_vehicle_ids: tuple[int, ...]
+    bridge_history_seconds: float
     reconnect_delay_seconds: float
     max_message_size: int | None
     client_queue_size: int
@@ -84,6 +85,7 @@ def load_settings() -> Settings:
         port=_get_int("RCT_PORT", 4567),
         devkit_urls=devkit_urls,
         devkit_vehicle_ids=devkit_vehicle_ids,
+        bridge_history_seconds=_get_float("RCT_BRIDGE_HISTORY_SECONDS", 5.0),
         reconnect_delay_seconds=_get_float("RCT_RECONNECT_DELAY_SECONDS", 3.0),
         max_message_size=max_message_size,
         client_queue_size=_get_int("RCT_CLIENT_QUEUE_SIZE", 256),

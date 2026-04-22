@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
+import asyncio
 import unittest
 import base64
 import gzip
 
 from rct.bridge import (
-    BridgeCache,
+    BridgeHistory,
     BridgeRateTracker,
+    ControlCache,
     OUTGOING_BRIDGE_DEFAULTS,
     extract_collision_counts,
     extract_lidar_range_arrays,
@@ -15,84 +17,83 @@ from rct.bridge import (
 )
 
 
-class BridgeCacheTests(unittest.TestCase):
-    def test_outgoing_cache_starts_with_control_defaults(self):
-        cache = BridgeCache()
+class BridgeHistoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_latest_returns_newest_retained_payload(self):
+        history = BridgeHistory(retention_seconds=5.0)
 
-        self.assertEqual(cache.outgoing_cache, OUTGOING_BRIDGE_DEFAULTS)
+        await history.append({"V1 Position": "1 0 0"}, now=10.0)
+        await history.append({"V1 Position": "2 0 0"}, now=12.0)
 
-    def test_outgoing_cache_merges_control_fields_only(self):
-        cache = BridgeCache()
+        latest = await history.latest(now=12.0)
 
-        outgoing = cache.update_outgoing(
+        self.assertIsNotNone(latest)
+        self.assertEqual(latest.timestamp, 12.0)
+        self.assertEqual(latest.payload, {"V1 Position": "2 0 0"})
+
+    async def test_retention_prunes_payloads_older_than_last_five_seconds(self):
+        history = BridgeHistory(retention_seconds=5.0)
+
+        await history.append({"old": 1}, now=10.0)
+        await history.append({"new": 2}, now=16.0)
+
+        record = await history.oldest_after(0.0, now=16.0)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record.payload, {"new": 2})
+
+    async def test_wait_for_oldest_after_blocks_until_newer_payload_exists(self):
+        history = BridgeHistory(retention_seconds=5.0)
+        latest = await history.append({"V1 Position": "10 0 0"})
+        waiter = asyncio.create_task(history.wait_for_oldest_after(latest.timestamp))
+
+        await asyncio.sleep(0)
+        self.assertFalse(waiter.done())
+
+        record = await history.append({"V1 Position": "11 0 0"})
+
+        waited_record = await asyncio.wait_for(waiter, timeout=1.0)
+        self.assertEqual(waited_record.timestamp, record.timestamp)
+        self.assertEqual(waited_record.payload, {"V1 Position": "11 0 0"})
+
+
+class ControlCacheTests(unittest.IsolatedAsyncioTestCase):
+    async def test_control_cache_starts_with_outgoing_defaults(self):
+        cache = ControlCache()
+
+        _timestamp, snapshot = await cache.snapshot()
+
+        expected = dict(OUTGOING_BRIDGE_DEFAULTS)
+        expected.pop("origin")
+        self.assertEqual(snapshot, expected)
+
+    async def test_merge_updates_control_fields_only(self):
+        cache = ControlCache()
+
+        _timestamp, snapshot = await cache.merge(
             {
                 "V1 Throttle": "0.5",
                 "V1 Steering": "-0.1",
                 "V1 Position": "ignored",
-            }
+            },
+            100.0,
         )
 
-        self.assertEqual(outgoing["V1 Throttle"], "0.5")
-        self.assertEqual(outgoing["V1 Steering"], "-0.1")
-        self.assertNotIn("V1 Position", outgoing)
-        self.assertEqual(outgoing["V2 Throttle"], "0.0")
+        self.assertEqual(snapshot["V1 Throttle"], "0.5")
+        self.assertEqual(snapshot["V1 Steering"], "-0.1")
+        self.assertNotIn("V1 Position", snapshot)
+        self.assertEqual(snapshot["V2 Throttle"], "0.0")
 
-    def test_current_outgoing_returns_copy(self):
-        cache = BridgeCache()
-        cache.update_outgoing({"V1 Throttle": "0.5"})
+    async def test_merge_can_include_origin(self):
+        cache = ControlCache()
 
-        outgoing = cache.current_outgoing()
-        outgoing["V1 Throttle"] = "mutated"
+        _timestamp, snapshot = await cache.merge(
+            {"V2 Throttle": "0.5"},
+            100.0,
+            origin_vehicle_id=2,
+            include_origin=True,
+        )
 
-        self.assertEqual(cache.current_outgoing()["V1 Throttle"], "0.5")
-
-    def test_incoming_cache_keeps_latest_simulator_bridge_payload(self):
-        cache = BridgeCache()
-        payload = {"V1 Position": "1 2 3"}
-
-        cached = cache.update_incoming(payload)
-        payload["V1 Position"] = "mutated"
-
-        self.assertEqual(cached, {"V1 Position": "1 2 3"})
-        self.assertEqual(cache.incoming_cache, {"V1 Position": "1 2 3"})
-
-    def test_current_incoming_returns_copy(self):
-        cache = BridgeCache()
-        cache.update_incoming({"V1 Position": "1 2 3"})
-
-        incoming = cache.current_incoming()
-        incoming["V1 Position"] = "mutated"
-
-        self.assertEqual(cache.current_incoming(), {"V1 Position": "1 2 3"})
-
-    def test_current_incoming_is_none_before_simulator_bridge_data(self):
-        cache = BridgeCache()
-
-        self.assertIsNone(cache.current_incoming())
-
-    def test_bridge_outgoing_is_single_flight(self):
-        cache = BridgeCache()
-
-        self.assertTrue(cache.request_outgoing(1))
-        self.assertFalse(cache.request_outgoing(2))
-        self.assertEqual(cache.pending_response_count, 1)
-        self.assertEqual(cache.queued_outgoing_count, 1)
-
-        self.assertEqual(cache.complete_inflight(), {1})
-        self.assertEqual(cache.pending_response_count, 0)
-
-        self.assertEqual(cache.start_queued_outgoing(), {2})
-        self.assertEqual(cache.pending_response_count, 1)
-        self.assertEqual(cache.queued_outgoing_count, 0)
-        self.assertEqual(cache.complete_inflight(), {2})
-
-    def test_queued_outgoing_waits_for_inflight_completion(self):
-        cache = BridgeCache()
-
-        self.assertTrue(cache.request_outgoing(1))
-        self.assertFalse(cache.request_outgoing(2))
-
-        self.assertEqual(cache.start_queued_outgoing(), set())
+        self.assertEqual(snapshot["origin"], 2)
 
 
 class BridgeRateTrackerTests(unittest.TestCase):
