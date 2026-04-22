@@ -22,6 +22,7 @@ def test_settings(**overrides) -> Settings:
         "devkit_urls": (),
         "devkit_vehicle_ids": (),
         "bridge_history_seconds": 5.0,
+        "enable_presplit_bridge_cache": True,
         "log_bridge_field_sizes": False,
         "empty_front_camera_in_bridge_history": False,
         "replace_front_camera_with_white_jpeg": False,

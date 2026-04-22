@@ -67,6 +67,9 @@ fi
 if [[ -n "${RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG+x}" ]]; then
   debug_env_flags+=(-e "RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG=${RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG}")
 fi
+if [[ -n "${RCT_ENABLE_PRESPLIT_BRIDGE_CACHE+x}" ]]; then
+  debug_env_flags+=(-e "RCT_ENABLE_PRESPLIT_BRIDGE_CACHE=${RCT_ENABLE_PRESPLIT_BRIDGE_CACHE}")
+fi
 if [[ -n "${RCT_ENABLE_ORIGIN+x}" ]]; then
   debug_env_flags+=(-e "RCT_ENABLE_ORIGIN=${RCT_ENABLE_ORIGIN}")
 fi

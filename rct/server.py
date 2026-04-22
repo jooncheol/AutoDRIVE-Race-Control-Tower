@@ -991,11 +991,23 @@ class RaceControlTower:
                 bridge_field_size(payload, "V2 LIDAR Intensity Array"),
             )
         self.log_collision_count_changes(payload)
+        bridge_history_payload_value = bridge_history_payload(
+            payload,
+            empty_front_camera=self.settings.empty_front_camera_in_bridge_history,
+        )
+        devkit_payloads: dict[int, Any] = {}
+        if self.settings.enable_presplit_bridge_cache:
+            devkit_bridge_payload = self.devkit_bridge_payload(payload)
+            devkit_payloads = {
+                devkit.vehicle_id: rewrite_simulator_payload_to_devkit(
+                    devkit_bridge_payload,
+                    devkit.vehicle_id,
+                )
+                for devkit in self.devkits
+            }
         await self.bridge_history.append(
-            bridge_history_payload(
-                payload,
-                empty_front_camera=self.settings.empty_front_camera_in_bridge_history,
-            )
+            bridge_history_payload_value,
+            payloads=devkit_payloads,
         )
         await self.publish_simulator_telemetry(payload, "Bridge")
         await self.emit_control_cache_to_simulator()
@@ -1004,7 +1016,13 @@ class RaceControlTower:
         record = await self.bridge_history.latest()
         if record is None:
             return
-        rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
+        prebuilt_payload = record.payloads.get(devkit.vehicle_id)
+        if prebuilt_payload is None:
+            rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
+            if rewritten_args is None:
+                return
+        else:
+            rewritten_args = (prebuilt_payload,)
         if rewritten_args is None:
             return
 
@@ -1120,7 +1138,13 @@ class RaceControlTower:
 
     async def send_next_bridge_after(self, devkit: DevKitConnection, timestamp: float) -> None:
         record = await self.bridge_history.wait_for_oldest_after(timestamp)
-        rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
+        prebuilt_payload = record.payloads.get(devkit.vehicle_id)
+        if prebuilt_payload is None:
+            rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
+            if rewritten_args is None:
+                return
+        else:
+            rewritten_args = (prebuilt_payload,)
         if rewritten_args is None:
             return
         await devkit.enqueue("Bridge", rewritten_args)

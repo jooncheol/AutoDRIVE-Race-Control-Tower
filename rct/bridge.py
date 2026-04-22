@@ -32,6 +32,7 @@ ROBORACER_FIELD_PATTERN = re.compile(r"roboracer_(?P<vehicle_id>\d+)", re.IGNORE
 class TimestampedBridgePayload:
     timestamp: float
     payload: Any
+    payloads: dict[int, Any] = field(default_factory=dict)
 
 
 class BridgeHistory:
@@ -40,9 +41,18 @@ class BridgeHistory:
         self._records: deque[TimestampedBridgePayload] = deque()
         self._condition = asyncio.Condition()
 
-    async def append(self, payload: Any, now: float | None = None) -> TimestampedBridgePayload:
+    async def append(
+        self,
+        payload: Any,
+        now: float | None = None,
+        payloads: dict[int, Any] | None = None,
+    ) -> TimestampedBridgePayload:
         timestamp = monotonic() if now is None else now
-        record = TimestampedBridgePayload(timestamp=timestamp, payload=deepcopy(payload))
+        record = TimestampedBridgePayload(
+            timestamp=timestamp,
+            payload=deepcopy(payload),
+            payloads=deepcopy(payloads) if payloads is not None else {},
+        )
         async with self._condition:
             self._prune_locked(timestamp)
             self._records.append(record)
@@ -83,7 +93,11 @@ class BridgeHistory:
             self._records.popleft()
 
     def _copy_record(self, record: TimestampedBridgePayload) -> TimestampedBridgePayload:
-        return TimestampedBridgePayload(record.timestamp, deepcopy(record.payload))
+        return TimestampedBridgePayload(
+            record.timestamp,
+            deepcopy(record.payload),
+            deepcopy(record.payloads),
+        )
 
 
 class ControlCache:

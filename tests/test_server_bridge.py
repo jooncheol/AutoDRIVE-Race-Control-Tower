@@ -28,6 +28,7 @@ def test_settings() -> Settings:
         devkit_urls=("ws://127.0.0.1:4568", "ws://127.0.0.1:4569"),
         devkit_vehicle_ids=(1, 2),
         bridge_history_seconds=5.0,
+        enable_presplit_bridge_cache=True,
         log_bridge_field_sizes=False,
         empty_front_camera_in_bridge_history=False,
         replace_front_camera_with_white_jpeg=False,
