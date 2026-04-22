@@ -50,6 +50,24 @@ LOGGER = logging.getLogger("rct")
 FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 SOCKETIO_PATH = "socket.io"
 BRIDGE_OMITTED_KEY_PARTS = ("lidar", "camera", "array", "image")
+FRONT_CAMERA_IMAGE_KEYS = ("V1 Front Camera Image", "V2 Front Camera Image")
+WHITE_FRONT_CAMERA_JPEG_BASE64 = (
+    "/9j/4AAQSkZJRgABAQEAYABgAAD//gA+Q1JFQVRPUjogZ2QtanBlZyB2MS4wICh1c2luZyBJSkcgSlBFRyB2ODApLCBk"
+    "ZWZhdWx0IHF1YWxpdHkK/9sAQwAIBgYHBgUIBwcHCQkICgwUDQwLCwwZEhMPFB0aHx4dGhwcICQuJyAiLCMcHCg3KSww"
+    "MTQ0NB8nOT04MjwuMzQy/9sAQwEJCQkMCwwYDQ0YMiEcITIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy"
+    "MjIyMjIyMjIyMjIyMjIy/8AAEQgAwABsAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//E"
+    "ALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkq"
+    "NDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1"
+    "tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgME"
+    "BQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDTh"
+    "JfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKj"
+    "pKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8A9/oo"
+    "ooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiii"
+    "gAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKA"
+    "CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA"
+    "KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigA"
+    "ooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//2Q=="
+)
 ANSI_RED = "\033[31m"
 ANSI_BLUE = "\033[34m"
 ANSI_GRAY = "\033[90m"
@@ -187,6 +205,31 @@ def bridge_field_size(payload: Any, key: str) -> int | None:
         return len(value)
     except TypeError:
         return None
+
+
+def bridge_front_camera_fields(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    return {key: payload[key] for key in FRONT_CAMERA_IMAGE_KEYS if key in payload}
+
+
+def replace_front_camera_fields(payload: Any, value: str) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+    if not any(key in payload for key in FRONT_CAMERA_IMAGE_KEYS):
+        return payload
+
+    replaced_payload = dict(payload)
+    for key in FRONT_CAMERA_IMAGE_KEYS:
+        if key in replaced_payload:
+            replaced_payload[key] = value
+    return replaced_payload
+
+
+def bridge_history_payload(payload: Any, empty_front_camera: bool = False) -> Any:
+    if not empty_front_camera:
+        return payload
+    return replace_front_camera_fields(payload, "")
 
 
 def color_arrow(text: str, color: str) -> str:
@@ -427,6 +470,7 @@ class RaceControlTower:
         self.bridge_history = BridgeHistory(settings.bridge_history_seconds)
         self.control_cache = ControlCache()
         self.bridge_rates = BridgeRateTracker()
+        self.latest_front_camera_fields: dict[str, Any] = {}
         self.collision_counts: dict[int, int] = {}
         self.trace_lidar_vehicle_ids: set[int] = set()
         self.monitor_vehicle_positions: dict[int, dict[str, Any]] = {}
@@ -933,7 +977,10 @@ class RaceControlTower:
 
         self.log_bridge_flow("sim-to-rct")
         payload = socketio_data_from_args(args)
-        if False:
+        if self.settings.replace_front_camera_with_white_jpeg:
+            payload = replace_front_camera_fields(payload, WHITE_FRONT_CAMERA_JPEG_BASE64)
+        self.latest_front_camera_fields = bridge_front_camera_fields(payload)
+        if self.settings.log_bridge_field_sizes:
             LOGGER.info(
                 "bridge sizes FC=(%s, %s) LR=(%s, %s) LA=(%s, %s)",
                 bridge_field_size(payload, "V1 Front Camera Image"),
@@ -944,7 +991,12 @@ class RaceControlTower:
                 bridge_field_size(payload, "V2 LIDAR Intensity Array"),
             )
         self.log_collision_count_changes(payload)
-        await self.bridge_history.append(payload)
+        await self.bridge_history.append(
+            bridge_history_payload(
+                payload,
+                empty_front_camera=self.settings.empty_front_camera_in_bridge_history,
+            )
+        )
         await self.publish_simulator_telemetry(payload, "Bridge")
         await self.emit_control_cache_to_simulator()
 
@@ -952,7 +1004,7 @@ class RaceControlTower:
         record = await self.bridge_history.latest()
         if record is None:
             return
-        rewritten_args = rewrite_args_for_devkit((record.payload,), devkit.vehicle_id)
+        rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
         if rewritten_args is None:
             return
 
@@ -1068,11 +1120,19 @@ class RaceControlTower:
 
     async def send_next_bridge_after(self, devkit: DevKitConnection, timestamp: float) -> None:
         record = await self.bridge_history.wait_for_oldest_after(timestamp)
-        rewritten_args = rewrite_args_for_devkit((record.payload,), devkit.vehicle_id)
+        rewritten_args = rewrite_args_for_devkit((self.devkit_bridge_payload(record.payload),), devkit.vehicle_id)
         if rewritten_args is None:
             return
         await devkit.enqueue("Bridge", rewritten_args)
         self.log_bridge_flow("rct-to-devkit", devkit.vehicle_id)
+
+    def devkit_bridge_payload(self, payload: Any) -> Any:
+        if not isinstance(payload, dict) or not self.latest_front_camera_fields:
+            return payload
+
+        merged_payload = dict(payload)
+        merged_payload.update(self.latest_front_camera_fields)
+        return merged_payload
 
     def record_bridge_rate(self, devkit: DevKitConnection) -> None:
         rates = self.bridge_rates.record(devkit.vehicle_id)

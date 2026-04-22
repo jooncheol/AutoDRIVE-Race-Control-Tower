@@ -58,6 +58,15 @@ fi
 if [[ -n "${RCT_LOG_BRIDGE_MAX_CHARS+x}" ]]; then
   debug_env_flags+=(-e "RCT_LOG_BRIDGE_MAX_CHARS=${RCT_LOG_BRIDGE_MAX_CHARS}")
 fi
+if [[ -n "${RCT_LOG_BRIDGE_FIELD_SIZES+x}" ]]; then
+  debug_env_flags+=(-e "RCT_LOG_BRIDGE_FIELD_SIZES=${RCT_LOG_BRIDGE_FIELD_SIZES}")
+fi
+if [[ -n "${RCT_EMPTY_FRONT_CAMERA_IN_BRIDGE_HISTORY+x}" ]]; then
+  debug_env_flags+=(-e "RCT_EMPTY_FRONT_CAMERA_IN_BRIDGE_HISTORY=${RCT_EMPTY_FRONT_CAMERA_IN_BRIDGE_HISTORY}")
+fi
+if [[ -n "${RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG+x}" ]]; then
+  debug_env_flags+=(-e "RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG=${RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG}")
+fi
 if [[ -n "${RCT_ENABLE_ORIGIN+x}" ]]; then
   debug_env_flags+=(-e "RCT_ENABLE_ORIGIN=${RCT_ENABLE_ORIGIN}")
 fi

@@ -40,6 +40,9 @@ class Settings:
     devkit_urls: tuple[str, ...]
     devkit_vehicle_ids: tuple[int, ...]
     bridge_history_seconds: float
+    log_bridge_field_sizes: bool
+    empty_front_camera_in_bridge_history: bool
+    replace_front_camera_with_white_jpeg: bool
     reconnect_delay_seconds: float
     max_message_size: int | None
     client_queue_size: int
@@ -86,6 +89,9 @@ def load_settings() -> Settings:
         devkit_urls=devkit_urls,
         devkit_vehicle_ids=devkit_vehicle_ids,
         bridge_history_seconds=_get_float("RCT_BRIDGE_HISTORY_SECONDS", 5.0),
+        log_bridge_field_sizes=_get_bool("RCT_LOG_BRIDGE_FIELD_SIZES", False),
+        empty_front_camera_in_bridge_history=_get_bool("RCT_EMPTY_FRONT_CAMERA_IN_BRIDGE_HISTORY", False),
+        replace_front_camera_with_white_jpeg=_get_bool("RCT_REPLACE_FRONT_CAMERA_WITH_WHITE_JPEG", False),
         reconnect_delay_seconds=_get_float("RCT_RECONNECT_DELAY_SECONDS", 3.0),
         max_message_size=max_message_size,
         client_queue_size=_get_int("RCT_CLIENT_QUEUE_SIZE", 256),
