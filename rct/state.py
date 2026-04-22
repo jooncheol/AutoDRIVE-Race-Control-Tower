@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from threading import RLock
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 
 @dataclass
@@ -29,6 +29,7 @@ class RaceControlState:
         self._simulator_clients = 0
         self._monitor_clients = 0
         self._devkits: dict[str, DevKitMonitorState] = {}
+        self._topic_selections: dict[str, bool] = {}
 
     def configure_devkits(self, devkits: Iterable[DevKitMonitorState]) -> None:
         with self._lock:
@@ -110,6 +111,32 @@ class RaceControlState:
             devkit.bridge_per_minute = bridge_per_minute
             self._revision += 1
 
+    def set_topic_selections(self, topic_selections: Mapping[str, bool]) -> None:
+        normalized_topic_selections = {
+            str(topic): bool(enabled) for topic, enabled in topic_selections.items()
+        }
+        with self._lock:
+            if self._topic_selections == normalized_topic_selections:
+                return
+            self._topic_selections = normalized_topic_selections
+            self._revision += 1
+
+    def update_topic_selections(self, topic_selections: Mapping[str, bool]) -> None:
+        normalized_updates = {
+            str(topic): bool(enabled) for topic, enabled in topic_selections.items()
+        }
+        with self._lock:
+            next_topic_selections = dict(self._topic_selections)
+            next_topic_selections.update(normalized_updates)
+            if self._topic_selections == next_topic_selections:
+                return
+            self._topic_selections = next_topic_selections
+            self._revision += 1
+
+    def topic_selections(self) -> dict[str, bool]:
+        with self._lock:
+            return dict(self._topic_selections)
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -117,4 +144,5 @@ class RaceControlState:
                 "simulator_clients": self._simulator_clients,
                 "monitor_clients": self._monitor_clients,
                 "devkits": [asdict(devkit) for devkit in self._devkits.values()],
+                "topic_selections": dict(self._topic_selections),
             }

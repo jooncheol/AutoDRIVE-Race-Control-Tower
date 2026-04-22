@@ -253,6 +253,72 @@ class ServerBridgeFlowTests(unittest.IsolatedAsyncioTestCase):
             await devkit_runner.cleanup()
 
     @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    @unittest.skipIf(not AIOHTTP_AVAILABLE, "aiohttp is not installed")
+    async def test_monitor_topics_get_returns_default_session_state(self):
+        tower = RaceControlTower(test_settings())
+        tower_app = tower.create_app()
+        tower_runner = web.AppRunner(tower_app)
+        await tower_runner.setup()
+        tower_site = web.TCPSite(tower_runner, "127.0.0.1", 0)
+        await tower_site.start()
+        tower_port = tower_runner.addresses[0][1]
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(
+                    f"http://127.0.0.1:{tower_port}/monitor/REST/latest/topics",
+                )
+                self.assertEqual(response.status, 200)
+                payload = await response.json()
+        finally:
+            await tower_runner.cleanup()
+
+        self.assertIn("topics", payload)
+        self.assertIn("topic_selections", payload)
+        self.assertFalse(payload["topic_selections"]["/autodrive/roboracer_1/front_camera"])
+        self.assertFalse(payload["topic_selections"]["/autodrive/roboracer_1/ips"])
+        self.assertTrue(payload["topic_selections"]["/autodrive/roboracer_1/imu"])
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
+    @unittest.skipIf(not AIOHTTP_AVAILABLE, "aiohttp is not installed")
+    async def test_monitor_topics_post_updates_session_state(self):
+        tower = RaceControlTower(test_settings())
+        tower_app = tower.create_app()
+        tower_runner = web.AppRunner(tower_app)
+        await tower_runner.setup()
+        tower_site = web.TCPSite(tower_runner, "127.0.0.1", 0)
+        await tower_site.start()
+        tower_port = tower_runner.addresses[0][1]
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                response = await session.post(
+                    f"http://127.0.0.1:{tower_port}/monitor/REST/latest/topics",
+                    json={
+                        "topic_selections": {
+                            "/autodrive/roboracer_1/front_camera": True,
+                            "/autodrive/roboracer_1/ips": True,
+                        }
+                    },
+                )
+                self.assertEqual(response.status, 200)
+                payload = await response.json()
+
+                follow_up = await session.get(
+                    f"http://127.0.0.1:{tower_port}/monitor/REST/latest/topics",
+                )
+                self.assertEqual(follow_up.status, 200)
+                follow_up_payload = await follow_up.json()
+        finally:
+            await tower_runner.cleanup()
+
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["topic_selections"]["/autodrive/roboracer_1/front_camera"])
+        self.assertTrue(payload["topic_selections"]["/autodrive/roboracer_1/ips"])
+        self.assertTrue(follow_up_payload["topic_selections"]["/autodrive/roboracer_1/front_camera"])
+        self.assertTrue(follow_up_payload["topic_selections"]["/autodrive/roboracer_1/ips"])
+
+    @unittest.skipIf(not SOCKETIO_AVAILABLE, "python-socketio is not installed")
     async def test_bridge_rate_refresh_clears_stale_rates(self):
         tower = RaceControlTower(test_settings())
         devkit = tower.devkits[0]

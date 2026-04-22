@@ -72,6 +72,27 @@ ANSI_RED = "\033[31m"
 ANSI_BLUE = "\033[34m"
 ANSI_GRAY = "\033[90m"
 ANSI_RESET = "\033[0m"
+TOPIC_OPTIONS: tuple[dict[str, Any], ...] = (
+    {"topic": "/autodrive/roboracer_1/best_lap_time", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/collision_count", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/front_camera", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/imu", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/ips", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/lap_count", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/lap_time", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/last_lap_time", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/left_encoder", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/lidar", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/right_encoder", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/speed", "access": "restricted"},
+    {"topic": "/autodrive/roboracer_1/steering", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/steering_command", "access": "output"},
+    {"topic": "/autodrive/roboracer_1/throttle", "access": "input"},
+    {"topic": "/autodrive/roboracer_1/throttle_command", "access": "output"},
+    {"topic": "/autodrive/reset_command", "access": "restricted"},
+    {"topic": "/tf", "access": "restricted"},
+)
+RECOMMENDED_OFF_TOPICS = frozenset({"/autodrive/roboracer_1/front_camera"})
 
 
 def configure_socketio_logging(settings: Settings) -> None:
@@ -277,6 +298,13 @@ def devkit_endpoint_from_url(url: str) -> tuple[str, int] | None:
     if parsed.hostname is None or port is None:
         return None
     return parsed.hostname, port
+
+
+def default_topic_selections() -> dict[str, bool]:
+    return {
+        option["topic"]: option["access"] != "restricted" and option["topic"] not in RECOMMENDED_OFF_TOPICS
+        for option in TOPIC_OPTIONS
+    }
 
 
 @dataclass
@@ -516,6 +544,7 @@ class RaceControlTower:
             )
             for devkit in self.devkits
         )
+        self.state.set_topic_selections(default_topic_selections())
         self._register_socketio_handlers()
         self._register_engineio_compat_handlers()
 
@@ -583,6 +612,8 @@ class RaceControlTower:
         self.sio.attach(app, socketio_path=SOCKETIO_PATH)
         app.router.add_get("/monitor/WS/{version}", self.handle_monitor_ws)
         app.router.add_get("/monitor/REST/{version}", self.handle_monitor_rest)
+        app.router.add_get("/monitor/REST/{version}/topics", self.handle_monitor_topics_get)
+        app.router.add_post("/monitor/REST/{version}/topics", self.handle_monitor_topics_post)
         app.router.add_post(
             "/monitor/REST/{version}/devkits/{vehicle_id}/endpoint",
             self.handle_monitor_devkit_endpoint_command,
@@ -740,6 +771,49 @@ class RaceControlTower:
                     "events": f"/monitor/{MONITOR_WS_TRANSPORT}/{MONITOR_PROTOCOL_LATEST}",
                 },
                 "state": self.status_payload(),
+            }
+        )
+
+    async def handle_monitor_topics_get(self, request: web.Request) -> web.Response:
+        version_path = f"/monitor/REST/{request.match_info['version']}"
+        if not is_monitor_rest_path(version_path):
+            return web.json_response({"error": "unsupported monitor protocol version"}, status=404)
+
+        return web.json_response(
+            {
+                "protocol": "autodrive-rct-monitor",
+                "version": MONITOR_PROTOCOL_VERSION,
+                "topics": self.topic_options_payload(),
+                "topic_selections": self.state.topic_selections(),
+            }
+        )
+
+    async def handle_monitor_topics_post(self, request: web.Request) -> web.Response:
+        version_path = f"/monitor/REST/{request.match_info['version']}"
+        if not is_monitor_rest_path(version_path):
+            return web.json_response({"error": "unsupported monitor protocol version"}, status=404)
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+
+        topic_selections = body.get("topic_selections", body.get("topics"))
+        if not isinstance(topic_selections, dict):
+            return web.json_response({"error": "topic_selections must be an object"}, status=400)
+
+        try:
+            validated_topic_selections = self.validate_topic_selections(topic_selections)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+        self.state.update_topic_selections(validated_topic_selections)
+        await self.publish_status()
+        return web.json_response(
+            {
+                "ok": True,
+                "topics": self.topic_options_payload(),
+                "topic_selections": self.state.topic_selections(),
             }
         )
 
@@ -1448,8 +1522,32 @@ class RaceControlTower:
             },
             "simulator_socketio_path": f"/{SOCKETIO_PATH}/",
             "trace_lidar_vehicle_ids": sorted(self.trace_lidar_vehicle_ids),
+            "topic_options": self.topic_options_payload(),
             **snapshot,
         }
+
+    def topic_options_payload(self) -> list[dict[str, Any]]:
+        selections = self.state.topic_selections()
+        return [
+            {
+                **option,
+                "checked": selections.get(option["topic"], default_topic_selections()[option["topic"]]),
+                "mutable": option["access"] == "restricted" or option["topic"] in RECOMMENDED_OFF_TOPICS,
+                "recommended_off": option["topic"] in RECOMMENDED_OFF_TOPICS,
+            }
+            for option in TOPIC_OPTIONS
+        ]
+
+    def validate_topic_selections(self, topic_selections: dict[str, Any]) -> dict[str, bool]:
+        valid_topics = {option["topic"] for option in TOPIC_OPTIONS}
+        validated_topic_selections: dict[str, bool] = {}
+        for topic, enabled in topic_selections.items():
+            if topic not in valid_topics:
+                raise ValueError(f"unsupported topic {topic!r}")
+            if not isinstance(enabled, bool):
+                raise ValueError(f"topic {topic!r} enabled flag must be a boolean")
+            validated_topic_selections[topic] = enabled
+        return validated_topic_selections
 
     def set_devkit_connected(self, devkit: DevKitConnection, connected: bool) -> None:
         devkit.connected = connected

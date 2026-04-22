@@ -67,6 +67,25 @@ class RaceControlStateTests(unittest.TestCase):
         self.assertEqual(snapshot["devkits"][0]["bridge_hz"], 0.5)
         self.assertEqual(snapshot["devkits"][0]["bridge_per_minute"], 30)
 
+    def test_snapshot_tracks_topic_selections(self):
+        state = RaceControlState()
+        state.set_topic_selections(
+            {
+                "/autodrive/roboracer_1/front_camera": False,
+                "/autodrive/roboracer_1/imu": True,
+            }
+        )
+
+        snapshot = state.snapshot()
+
+        self.assertEqual(
+            snapshot["topic_selections"],
+            {
+                "/autodrive/roboracer_1/front_camera": False,
+                "/autodrive/roboracer_1/imu": True,
+            },
+        )
+
     def test_revision_changes_only_when_values_change(self):
         state = RaceControlState()
         state.configure_devkits([DevKitMonitorState("devkit:1", 1, "ws://127.0.0.1:4568")])

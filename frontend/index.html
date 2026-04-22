@@ -618,26 +618,29 @@
         1: Promise.resolve(),
         2: Promise.resolve(),
       };
-      const topicOptions = [
-        { topic: "/autodrive/roboracer_1/best_lap_time", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/collision_count", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/front_camera", access: "input" },
-        { topic: "/autodrive/roboracer_1/imu", access: "input" },
-        { topic: "/autodrive/roboracer_1/ips", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/lap_count", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/lap_time", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/last_lap_time", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/left_encoder", access: "input" },
-        { topic: "/autodrive/roboracer_1/lidar", access: "input" },
-        { topic: "/autodrive/roboracer_1/right_encoder", access: "input" },
-        { topic: "/autodrive/roboracer_1/speed", access: "restricted" },
-        { topic: "/autodrive/roboracer_1/steering", access: "input" },
-        { topic: "/autodrive/roboracer_1/steering_command", access: "output" },
-        { topic: "/autodrive/roboracer_1/throttle", access: "input" },
-        { topic: "/autodrive/roboracer_1/throttle_command", access: "output" },
-        { topic: "/autodrive/reset_command", access: "restricted" },
-        { topic: "/tf", access: "restricted" },
+      const fallbackTopicOptions = [
+        { topic: "/autodrive/roboracer_1/best_lap_time", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/collision_count", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/front_camera", access: "input", mutable: true, checked: false, recommended_off: true },
+        { topic: "/autodrive/roboracer_1/imu", access: "input", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/ips", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/lap_count", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/lap_time", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/last_lap_time", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/left_encoder", access: "input", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/lidar", access: "input", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/right_encoder", access: "input", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/speed", access: "restricted", mutable: true, checked: false },
+        { topic: "/autodrive/roboracer_1/steering", access: "input", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/steering_command", access: "output", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/throttle", access: "input", mutable: false, checked: true },
+        { topic: "/autodrive/roboracer_1/throttle_command", access: "output", mutable: false, checked: true },
+        { topic: "/autodrive/reset_command", access: "restricted", mutable: true, checked: false },
+        { topic: "/tf", access: "restricted", mutable: true, checked: false },
       ];
+      let topicOptions = [...fallbackTopicOptions];
+      let topicSelections = {};
+      let topicSettingsSaveChain = Promise.resolve();
       let simulatorConnected = false;
 
       function frontendWebSocketUrl() {
@@ -684,33 +687,119 @@
         allRestrictedTopicsCheckbox.indeterminate = checkedCount > 0 && checkedCount < restrictedCheckboxes.length;
       }
 
-      function renderTopicOptions() {
+      function topicDisplayLabel(option) {
+        if (option.recommended_off) {
+          return `${option.topic} (Recommend to off)`;
+        }
+        return option.topic;
+      }
+
+      function collectTopicSelections() {
+        const nextTopicSelections = {};
+        for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-topic]")) {
+          nextTopicSelections[checkbox.dataset.topic] = checkbox.checked;
+        }
+        return nextTopicSelections;
+      }
+
+      function syncTopicSelectionsFromState(nextTopicSelections) {
+        if (!nextTopicSelections || typeof nextTopicSelections !== "object") {
+          return;
+        }
+        topicSelections = { ...topicSelections, ...nextTopicSelections };
+        for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-topic]")) {
+          if (!Object.prototype.hasOwnProperty.call(topicSelections, checkbox.dataset.topic)) {
+            continue;
+          }
+          checkbox.checked = Boolean(topicSelections[checkbox.dataset.topic]);
+        }
+        updateAllRestrictedCheckboxState();
+      }
+
+      function renderTopicOptions(options = topicOptions, selections = topicSelections) {
+        topicOptions = Array.isArray(options) ? options : [];
+        topicSelections = selections && typeof selections === "object" ? { ...selections } : {};
         topicsTableBody.innerHTML = "";
         for (const [index, option] of topicOptions.entries()) {
           const row = document.createElement("tr");
-          const checkboxEnabled = option.access === "restricted" || option.topic === "/autodrive/roboracer_1/front_camera";
+          const checked = Object.prototype.hasOwnProperty.call(topicSelections, option.topic)
+            ? Boolean(topicSelections[option.topic])
+            : Boolean(option.checked);
           row.innerHTML = `
             <td class="rct-topics-checkbox-cell">
               <input
                 class="form-check-input topic-checkbox"
                 type="checkbox"
                 id="topic-option-${index}"
+                data-topic="${option.topic}"
                 data-access="${option.access}"
-                ${checkboxEnabled ? "" : "disabled checked"}
+                ${checked ? "checked" : ""}
+                ${option.mutable ? "" : "disabled"}
               >
             </td>
             <td class="rct-topics-topic-cell">
-              <label class="form-check-label" for="topic-option-${index}">${option.topic}</label>
+              <label class="form-check-label" for="topic-option-${index}">${topicDisplayLabel(option)}</label>
             </td>
             <td class="rct-topics-status">${topicAccessLabel(option.access)}</td>
           `;
           topicsTableBody.appendChild(row);
         }
 
-        for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-access='restricted']")) {
-          checkbox.addEventListener("change", updateAllRestrictedCheckboxState);
+        for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox")) {
+          checkbox.addEventListener("change", () => {
+            topicSelections = collectTopicSelections();
+            updateAllRestrictedCheckboxState();
+            void saveTopicSelections();
+          });
         }
         updateAllRestrictedCheckboxState();
+      }
+
+      async function loadTopicSettings() {
+        const response = await fetch(monitorRestUrl("/topics"));
+        if (!response.ok) {
+          throw new Error(`Failed to load topic settings: ${response.status} ${response.statusText}`);
+        }
+        const payload = await response.json();
+        renderTopicOptions(payload.topics, payload.topic_selections);
+      }
+
+      async function postTopicSelections() {
+        topicSelections = collectTopicSelections();
+        const response = await fetch(monitorRestUrl("/topics"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            topic_selections: topicSelections,
+          }),
+        });
+        if (!response.ok) {
+          let errorText = `${response.status} ${response.statusText}`;
+          try {
+            const errorBody = await response.json();
+            if (errorBody && typeof errorBody.error === "string") {
+              errorText = errorBody.error;
+            }
+          } catch (error) {
+            // ignore JSON parse failures and keep the HTTP status text
+          }
+          throw new Error(errorText);
+        }
+        const payload = await response.json();
+        renderTopicOptions(payload.topics, payload.topic_selections);
+        return payload;
+      }
+
+      function saveTopicSelections() {
+        topicSettingsSaveChain = topicSettingsSaveChain
+          .catch(() => {})
+          .then(() => postTopicSelections())
+          .catch((error) => {
+            console.warn("Topic settings save failed:", error);
+          });
+        return topicSettingsSaveChain;
       }
 
       function updateSettingsApplyState() {
@@ -1180,6 +1269,15 @@
           setSimulatorStatus(Number(message.simulator_clients || 0) > 0);
           updateRoboracerStatusFromState(message.devkits);
           updateTraceLidarFromState(message.trace_lidar_vehicle_ids);
+          if (
+            Array.isArray(message.topic_options)
+            && message.topic_options.length > 0
+            && topicOptions.length !== message.topic_options.length
+          ) {
+            renderTopicOptions(message.topic_options, message.topic_selections);
+          } else {
+            syncTopicSelectionsFromState(message.topic_selections);
+          }
         } else if (message.event === "telemetry") {
           updateTelemetry(message.vehicles);
         }
@@ -1728,18 +1826,32 @@
         for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-access='restricted']")) {
           checkbox.checked = allRestrictedTopicsCheckbox.checked;
         }
+        topicSelections = collectTopicSelections();
         updateAllRestrictedCheckboxState();
+        void saveTopicSelections();
+      });
+      settingsApplyButton.addEventListener("click", () => {
+        void saveTopicSelections();
       });
       settingsTabButtons.forEach((button) => {
         button.addEventListener("shown.bs.tab", updateSettingsApplyState);
       });
 
-      renderTopicOptions();
-      updateSettingsApplyState();
-      setRotation(90);
-      updateRecenterButton();
-      setCanvasInteractionEnabled(false);
-      connectRctStatus();
+      async function initializeFrontend() {
+        try {
+          await loadTopicSettings();
+        } catch (error) {
+          console.warn("Falling back to client-side topic defaults:", error);
+          renderTopicOptions(fallbackTopicOptions, {});
+        }
+        updateSettingsApplyState();
+        setRotation(90);
+        updateRecenterButton();
+        setCanvasInteractionEnabled(false);
+        connectRctStatus();
+      }
+
+      void initializeFrontend();
     </script>
   </body>
 </html>
