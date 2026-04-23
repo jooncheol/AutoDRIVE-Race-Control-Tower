@@ -156,9 +156,10 @@ class MonitorTelemetryTests(unittest.TestCase):
         telemetry = extract_monitor_telemetry(
             {
                 "V1 Best Lap Time": "12.34",
-                "V1 Collision Count": "2",
+                "V1 Collisions": "2",
                 "V1 Position": "1.5 -2.0 0.3",
                 "V1 Lap Count": 4,
+                "V1 Lap Time": "11.11",
                 "V1 Last Lap Time": "13.37",
                 "V1 Speed": "5.5",
                 "V1 Linear Velocity": "0.0 2.0 0.0",
@@ -174,7 +175,8 @@ class MonitorTelemetryTests(unittest.TestCase):
         self.assertEqual(telemetry[1]["ips"]["x"], 1.5)
         self.assertEqual(telemetry[1]["ips"]["y"], -2.0)
         self.assertEqual(telemetry[1]["lap_count"], 4)
-        self.assertEqual(telemetry[1]["last_lap_count"], "13.37")
+        self.assertEqual(telemetry[1]["lap_time"], "11.11")
+        self.assertEqual(telemetry[1]["last_lap_time"], "13.37")
         self.assertEqual(telemetry[1]["speed"], 5.5)
         self.assertEqual(telemetry[1]["linear_velocity"], {"x": 0.0, "y": 2.0, "z": 0.0})
         self.assertAlmostEqual(telemetry[1]["heading_yaw"], 1.5707963267948966, places=6)

@@ -474,10 +474,12 @@ def _monitor_field_from_key(key: Any) -> str | None:
 
     if "best" in normalized and "lap" in normalized and "time" in normalized:
         return "best_lap_time"
-    if "collision" in normalized and "count" in normalized:
+    if "collision" in normalized:
         return "collision_count"
     if "last" in normalized and "lap" in normalized and ("count" in normalized or "time" in normalized):
-        return "last_lap_count"
+        return "last_lap_time"
+    if "lap" in normalized and "time" in normalized:
+        return "lap_time"
     if "lap" in normalized and "count" in normalized:
         return "lap_count"
     if "speed" in normalized:
