@@ -1600,6 +1600,7 @@ class RaceControlTower:
     def status_payload(self) -> dict[str, Any]:
         self.refresh_bridge_rates()
         snapshot = self.state.snapshot()
+        snapshot.pop("topic_selections", None)
         return {
             "monitor_protocol": {
                 "name": "autodrive-rct-monitor",
@@ -1607,7 +1608,6 @@ class RaceControlTower:
             },
             "simulator_socketio_path": f"/{SOCKETIO_PATH}/",
             "trace_lidar_vehicle_ids": sorted(self.trace_lidar_vehicle_ids),
-            "topic_options": self.topic_options_payload(),
             **snapshot,
         }
 

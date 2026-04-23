@@ -548,6 +548,7 @@
       const rctStatusText = document.getElementById("rctStatusText");
       const simulatorStatusDot = document.getElementById("simulatorStatusDot");
       const simulatorStatusText = document.getElementById("simulatorStatusText");
+      const settingsDialog = document.getElementById("settingsDialog");
       const settingsApplyButton = document.getElementById("settingsApplyButton");
       const allRestrictedTopicsCheckbox = document.getElementById("allRestrictedTopics");
       const topicsTableBody = document.getElementById("topicsTableBody");
@@ -640,6 +641,7 @@
       ];
       let topicOptions = [...fallbackTopicOptions];
       let topicSelections = {};
+      let appliedTopicSelections = {};
       let topicSettingsSaveChain = Promise.resolve();
       let simulatorConnected = false;
 
@@ -702,23 +704,34 @@
         return nextTopicSelections;
       }
 
+      function topicSelectionsChanged() {
+        return JSON.stringify(topicSelections) !== JSON.stringify(appliedTopicSelections);
+      }
+
       function syncTopicSelectionsFromState(nextTopicSelections) {
         if (!nextTopicSelections || typeof nextTopicSelections !== "object") {
           return;
         }
-        topicSelections = { ...topicSelections, ...nextTopicSelections };
+        const hasPendingChanges = topicSelectionsChanged();
+        appliedTopicSelections = { ...appliedTopicSelections, ...nextTopicSelections };
+        if (!hasPendingChanges) {
+          topicSelections = { ...topicSelections, ...nextTopicSelections };
+        }
         for (const checkbox of topicsTableBody.querySelectorAll(".topic-checkbox[data-topic]")) {
-          if (!Object.prototype.hasOwnProperty.call(topicSelections, checkbox.dataset.topic)) {
+          const sourceSelections = hasPendingChanges ? topicSelections : appliedTopicSelections;
+          if (!Object.prototype.hasOwnProperty.call(sourceSelections, checkbox.dataset.topic)) {
             continue;
           }
-          checkbox.checked = Boolean(topicSelections[checkbox.dataset.topic]);
+          checkbox.checked = Boolean(sourceSelections[checkbox.dataset.topic]);
         }
         updateAllRestrictedCheckboxState();
+        updateSettingsApplyState();
       }
 
       function renderTopicOptions(options = topicOptions, selections = topicSelections) {
         topicOptions = Array.isArray(options) ? options : [];
         topicSelections = selections && typeof selections === "object" ? { ...selections } : {};
+        appliedTopicSelections = { ...topicSelections };
         topicsTableBody.innerHTML = "";
         for (const [index, option] of topicOptions.entries()) {
           const row = document.createElement("tr");
@@ -749,10 +762,11 @@
           checkbox.addEventListener("change", () => {
             topicSelections = collectTopicSelections();
             updateAllRestrictedCheckboxState();
-            void saveTopicSelections();
+            updateSettingsApplyState();
           });
         }
         updateAllRestrictedCheckboxState();
+        updateSettingsApplyState();
       }
 
       async function loadTopicSettings() {
@@ -795,7 +809,15 @@
       function saveTopicSelections() {
         topicSettingsSaveChain = topicSettingsSaveChain
           .catch(() => {})
-          .then(() => postTopicSelections())
+          .then(async () => {
+            if (!rctSocket || rctSocket.readyState !== WebSocket.OPEN) {
+              throw new Error("RCT monitor websocket is disconnected");
+            }
+            const payload = await postTopicSelections();
+            appliedTopicSelections = { ...payload.topic_selections };
+            updateSettingsApplyState();
+            return payload;
+          })
           .catch((error) => {
             console.warn("Topic settings save failed:", error);
           });
@@ -804,7 +826,9 @@
 
       function updateSettingsApplyState() {
         const topicsTabButton = document.getElementById("topics-tab");
-        settingsApplyButton.disabled = !topicsTabButton.classList.contains("active");
+        const topicsChanged = topicSelectionsChanged();
+        const wsConnected = Boolean(rctSocket && rctSocket.readyState === WebSocket.OPEN);
+        settingsApplyButton.disabled = !topicsTabButton.classList.contains("active") || !topicsChanged || !wsConnected;
       }
 
       function setCanvasInteractionEnabled(enabled) {
@@ -1269,15 +1293,6 @@
           setSimulatorStatus(Number(message.simulator_clients || 0) > 0);
           updateRoboracerStatusFromState(message.devkits);
           updateTraceLidarFromState(message.trace_lidar_vehicle_ids);
-          if (
-            Array.isArray(message.topic_options)
-            && message.topic_options.length > 0
-            && topicOptions.length !== message.topic_options.length
-          ) {
-            renderTopicOptions(message.topic_options, message.topic_selections);
-          } else {
-            syncTopicSelectionsFromState(message.topic_selections);
-          }
         } else if (message.event === "telemetry") {
           updateTelemetry(message.vehicles);
         }
@@ -1285,21 +1300,25 @@
 
       function connectRctStatus() {
         setRctStatus("connecting");
+        updateSettingsApplyState();
         rctSocket = new WebSocket(frontendWebSocketUrl());
         rctSocket.addEventListener("open", () => {
           setRctStatus("online");
+          updateSettingsApplyState();
           console.log("RCT frontend WebSocket connected");
         });
         rctSocket.addEventListener("close", (event) => {
           setRctStatus("offline");
           setSimulatorStatus(false);
           setAllRoboracerStatus(false);
+          updateSettingsApplyState();
           console.log("RCT frontend WebSocket disconnected:", event.code, event.reason);
         });
         rctSocket.addEventListener("error", (event) => {
           setRctStatus("offline");
           setSimulatorStatus(false);
           setAllRoboracerStatus(false);
+          updateSettingsApplyState();
           console.log("RCT frontend WebSocket error:", event);
         });
         rctSocket.addEventListener("message", (event) => {
@@ -1828,7 +1847,7 @@
         }
         topicSelections = collectTopicSelections();
         updateAllRestrictedCheckboxState();
-        void saveTopicSelections();
+        updateSettingsApplyState();
       });
       settingsApplyButton.addEventListener("click", () => {
         void saveTopicSelections();
@@ -1836,14 +1855,14 @@
       settingsTabButtons.forEach((button) => {
         button.addEventListener("shown.bs.tab", updateSettingsApplyState);
       });
+      settingsDialog.addEventListener("show.bs.modal", () => {
+        void loadTopicSettings().catch((error) => {
+          console.warn("Failed to refresh topic settings:", error);
+        });
+      });
 
       async function initializeFrontend() {
-        try {
-          await loadTopicSettings();
-        } catch (error) {
-          console.warn("Falling back to client-side topic defaults:", error);
-          renderTopicOptions(fallbackTopicOptions, {});
-        }
+        renderTopicOptions(fallbackTopicOptions, {});
         updateSettingsApplyState();
         setRotation(90);
         updateRecenterButton();
