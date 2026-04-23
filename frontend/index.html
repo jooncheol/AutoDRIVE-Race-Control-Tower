@@ -564,6 +564,7 @@
           bridgeHz: document.getElementById("roboracer1BridgeHz"),
           ips: document.getElementById("roboracer1Ips"),
           collisions: document.getElementById("roboracer1Collisions"),
+          thisLap: document.getElementById("roboracer1ThisLap"),
           lastLap: document.getElementById("roboracer1LastLap"),
           bestLap: document.getElementById("roboracer1BestLap"),
           traceLidarButton: document.getElementById("roboracer1TraceLidar"),
@@ -578,6 +579,7 @@
           bridgeHz: document.getElementById("roboracer2BridgeHz"),
           ips: document.getElementById("roboracer2Ips"),
           collisions: document.getElementById("roboracer2Collisions"),
+          thisLap: document.getElementById("roboracer2ThisLap"),
           lastLap: document.getElementById("roboracer2LastLap"),
           bestLap: document.getElementById("roboracer2BestLap"),
           traceLidarButton: document.getElementById("roboracer2TraceLidar"),
@@ -1257,6 +1259,9 @@
         rememberHeading(vehicleId, telemetry);
         if (Object.prototype.hasOwnProperty.call(telemetry, "collision_count")) {
           roboracer.collisions.textContent = formatNumber(telemetry.collision_count, 0);
+        }
+        if (Object.prototype.hasOwnProperty.call(telemetry, "lap_time")) {
+          roboracer.thisLap.textContent = formatNumber(telemetry.lap_time);
         }
         if (Object.prototype.hasOwnProperty.call(telemetry, "last_lap_time")) {
           roboracer.lastLap.textContent = formatNumber(telemetry.last_lap_time);
