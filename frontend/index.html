@@ -248,6 +248,10 @@
         font-size: 0.875rem;
       }
 
+      .rct-stat-secondary {
+        color: #6c757d;
+      }
+
       .rct-main-canvas {
         cursor: grab;
         display: block;
@@ -374,7 +378,7 @@
                       <tr>
                         <th class="rct-topics-checkbox-cell"></th>
                         <th>Topic</th>
-                        <th>Status</th>
+                        <th>Access</th>
                       </tr>
                     </thead>
                     <tbody id="topicsTableBody"></tbody>
@@ -418,25 +422,13 @@
             <div class="px-2 text-start d-flex flex-column flex-grow-1">
               <label for="roboracer1Ip" class="form-label small mb-1">Hostname (IP)</label>
               <input id="roboracer1Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
-              <label for="roboracer1Port" class="form-label small mb-1">Port Number</label>
+              <label for="roboracer1Port" class="form-label small mb-1">Port</label>
               <input id="roboracer1Port" class="form-control form-control-sm mb-3" type="number" value="4568">
               <button id="roboracer1Status" class="btn btn-sm btn-outline-secondary w-100" type="button">Disconnected</button>
               <dl class="rct-stat-list mt-3 mb-0">
                 <div class="d-flex justify-content-between">
                   <dt>Lap count:</dt>
                   <dd id="roboracer1LapCount" class="mb-1">0</dd>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <dt>Speed:</dt>
-                  <dd id="roboracer1Speed" class="mb-1">0</dd>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <dt>Bridge Hz:</dt>
-                  <dd id="roboracer1BridgeHz" class="mb-1">0</dd>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <dt>IPS:</dt>
-                  <dd id="roboracer1Ips" class="mb-1">0, 0</dd>
                 </div>
                 <div class="d-flex justify-content-between">
                   <dt>Collisions:</dt>
@@ -454,9 +446,13 @@
                   <dt>Best Lap:</dt>
                   <dd id="roboracer1BestLap" class="mb-1">00:00</dd>
                 </div>
-                <div class="d-flex justify-content-between">
-                  <dt>Penalty:</dt>
-                  <dd id="roboracer1TotalPenalty" class="mb-0">00:00</dd>
+                <div class="d-flex justify-content-between rct-stat-secondary">
+                  <dt>Bridge Hz:</dt>
+                  <dd id="roboracer1BridgeHz" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between rct-stat-secondary">
+                  <dt>IPS:</dt>
+                  <dd id="roboracer1Ips" class="mb-0">0, 0</dd>
                 </div>
               </dl>
               <button id="roboracer1TraceLidar" class="btn btn-sm btn-primary w-100 mt-auto mb-3" type="button">Trace LiDAR</button>
@@ -480,25 +476,13 @@
             <div class="px-2 text-start d-flex flex-column flex-grow-1">
               <label for="roboracer2Ip" class="form-label small mb-1">Hostname (IP)</label>
               <input id="roboracer2Ip" class="form-control form-control-sm mb-2" type="text" value="127.0.0.1">
-              <label for="roboracer2Port" class="form-label small mb-1">Port Number</label>
+              <label for="roboracer2Port" class="form-label small mb-1">Port</label>
               <input id="roboracer2Port" class="form-control form-control-sm mb-3" type="number" value="4569">
               <button id="roboracer2Status" class="btn btn-sm btn-outline-secondary w-100" type="button">Disconnected</button>
               <dl class="rct-stat-list mt-3 mb-0">
                 <div class="d-flex justify-content-between">
                   <dt>Lap count:</dt>
                   <dd id="roboracer2LapCount" class="mb-1">0</dd>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <dt>Speed:</dt>
-                  <dd id="roboracer2Speed" class="mb-1">0</dd>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <dt>Bridge Hz:</dt>
-                  <dd id="roboracer2BridgeHz" class="mb-1">0</dd>
-                </div>
-                <div class="d-flex justify-content-between">
-                  <dt>IPS:</dt>
-                  <dd id="roboracer2Ips" class="mb-1">0, 0</dd>
                 </div>
                 <div class="d-flex justify-content-between">
                   <dt>Collisions:</dt>
@@ -516,9 +500,13 @@
                   <dt>Best Lap:</dt>
                   <dd id="roboracer2BestLap" class="mb-1">00:00</dd>
                 </div>
-                <div class="d-flex justify-content-between">
-                  <dt>Penalty:</dt>
-                  <dd id="roboracer2TotalPenalty" class="mb-0">00:00</dd>
+                <div class="d-flex justify-content-between rct-stat-secondary">
+                  <dt>Bridge Hz:</dt>
+                  <dd id="roboracer2BridgeHz" class="mb-1">0</dd>
+                </div>
+                <div class="d-flex justify-content-between rct-stat-secondary">
+                  <dt>IPS:</dt>
+                  <dd id="roboracer2Ips" class="mb-0">0, 0</dd>
                 </div>
               </dl>
               <button id="roboracer2TraceLidar" class="btn btn-sm btn-primary w-100 mt-auto mb-3" type="button">Trace LiDAR</button>
@@ -560,7 +548,6 @@
           endpointDirty: false,
           statusButton: document.getElementById("roboracer1Status"),
           lapCount: document.getElementById("roboracer1LapCount"),
-          speed: document.getElementById("roboracer1Speed"),
           bridgeHz: document.getElementById("roboracer1BridgeHz"),
           ips: document.getElementById("roboracer1Ips"),
           collisions: document.getElementById("roboracer1Collisions"),
@@ -575,7 +562,6 @@
           endpointDirty: false,
           statusButton: document.getElementById("roboracer2Status"),
           lapCount: document.getElementById("roboracer2LapCount"),
-          speed: document.getElementById("roboracer2Speed"),
           bridgeHz: document.getElementById("roboracer2BridgeHz"),
           ips: document.getElementById("roboracer2Ips"),
           collisions: document.getElementById("roboracer2Collisions"),
@@ -866,6 +852,8 @@
           return;
         }
 
+        roboracer.hostInput.disabled = connected;
+        roboracer.portInput.disabled = connected;
         roboracer.statusButton.dataset.connected = connected ? "true" : "false";
         roboracer.statusButton.textContent = connected ? "Connected" : "Disconnected";
         roboracer.statusButton.className = connected
@@ -1067,7 +1055,10 @@
         if (!Number.isFinite(number)) {
           return value == null ? "-" : String(value);
         }
-        return number.toFixed(fractionDigits).replace(/\.?0+$/, "");
+        if (fractionDigits <= 0) {
+          return number.toFixed(0);
+        }
+        return number.toFixed(fractionDigits).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1");
       }
 
       function formatIps(ips) {
@@ -1248,9 +1239,6 @@
 
         if (Object.prototype.hasOwnProperty.call(telemetry, "lap_count")) {
           roboracer.lapCount.textContent = formatNumber(telemetry.lap_count, 0);
-        }
-        if (Object.prototype.hasOwnProperty.call(telemetry, "speed")) {
-          roboracer.speed.textContent = formatNumber(telemetry.speed);
         }
         if (Object.prototype.hasOwnProperty.call(telemetry, "ips")) {
           rememberIps(vehicleId, telemetry.ips);
@@ -1605,7 +1593,7 @@
 
         const host = window.location.host || "localhost:4567";
         const instructions = [
-          "1. Enter RCT Server-reachable Hostname (IP) and Port Number for Roboracer A and B, then connect.",
+          "1. Enter RCT Server-reachable Hostname (IP) and Port for Roboracer A and B, then connect.",
           `2. Connect AutoDRIVE Simulator to RCT (${host}) to start race control.`,
           "3. Enjoy the H2H racing action and watch the stats update in real-time!",
         ];
